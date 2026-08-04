@@ -344,6 +344,18 @@ input:focus-visible {
 .summary.ok { color: var(--ok); }
 .summary.error { color: var(--rec); }
 
+/* ---------- YouTube-kontosektionen ---------- */
+
+.acct summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 15px;
+  list-style-position: outside;
+}
+.acct summary:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
+.acct[open] summary { margin-bottom: 10px; }
+.acct .btn input[type="file"] { display: none; }
+
 /* ---------- sidfot & modal ---------- */
 
 .foot {

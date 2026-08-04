@@ -51,10 +51,12 @@ def short_error(exc) -> str:
     return msg[:300]
 
 
-def flat_entries(url):
+def flat_entries(url, cookiefile=None):
     import yt_dlp
     opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
             "skip_download": True}
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     entries = info.get("entries")
@@ -65,12 +67,18 @@ def flat_entries(url):
     return info.get("title") or "Spellista", entries
 
 
-def probe(url):
+def probe(url, cookiefile=None):
     try:
         title, entries = flat_entries(url)
     except Exception as exc:
-        log(short_error(exc), "error")
-        sys.exit(1)
+        if not cookiefile:
+            log(short_error(exc), "error")
+            sys.exit(1)
+        try:
+            title, entries = flat_entries(url, cookiefile)
+        except Exception as exc2:
+            log(short_error(exc2), "error")
+            sys.exit(1)
     emit(t="probe", title=title, count=len(entries))
 
 
@@ -109,7 +117,8 @@ def cleanup_parts(pdir: Path, vid: str):
             pass
 
 
-def download_one(vid: str, pdir: Path):
+def download_one(vid: str, pdir: Path, cookiefile=None,
+                 host="www.youtube.com"):
     import yt_dlp
 
     last_emit = 0.0
@@ -152,8 +161,12 @@ def download_one(vid: str, pdir: Path):
         },
         "progress_hooks": [hook],
     }
+    if cookiefile:
+        # Inloggat läge går via music.youtube.com — det är där kontolåsta
+        # spår och Premium-formaten (256 kbit/s) serveras.
+        opts["cookiefile"] = cookiefile
     with yt_dlp.YoutubeDL(opts) as ydl:
-        return ydl.extract_info(f"https://www.youtube.com/watch?v={vid}",
+        return ydl.extract_info(f"https://{host}/watch?v={vid}",
                                 download=True)
 
 
@@ -187,13 +200,29 @@ def run(job):
     pdir = base / folder
     pdir.mkdir(parents=True, exist_ok=True)
 
+    ck = job.get("cookiefile")
+    mode = job.get("cookie_mode") or "fallback"
+    always = bool(ck) and mode == "always"
+    if always:
+        log("Använder ditt YouTube-konto för hämtningarna.")
+
     log("Läser spellistan …")
     try:
-        title, entries = flat_entries(job["url"])
+        title, entries = flat_entries(job["url"], ck if always else None)
     except Exception as exc:
-        log(f"Kunde inte läsa spellistan: {short_error(exc)}", "error")
-        emit(t="done", new=0, skipped=0, failed=1)
-        return
+        if ck and not always:
+            log("Kunde inte läsa spellistan anonymt — provar med ditt "
+                "YouTube-konto …")
+            try:
+                title, entries = flat_entries(job["url"], ck)
+            except Exception as exc2:
+                log(f"Kunde inte läsa spellistan: {short_error(exc2)}", "error")
+                emit(t="done", new=0, skipped=0, failed=1)
+                return
+        else:
+            log(f"Kunde inte läsa spellistan: {short_error(exc)}", "error")
+            emit(t="done", new=0, skipped=0, failed=1)
+            return
 
     if not entries:
         log("Spellistan verkar vara tom.", "warn")
@@ -215,6 +244,13 @@ def run(job):
     new = failed = 0
     number = next_number(pdir) if shanling else 0
 
+    if always:
+        attempts = [(ck, "music.youtube.com"), (ck, "www.youtube.com")]
+    else:
+        attempts = [(None, "www.youtube.com")]
+        if ck:
+            attempts += [(ck, "music.youtube.com"), (ck, "www.youtube.com")]
+
     for k, entry in enumerate(todo, 1):
         if k > 1:
             # Slumpad paus mellan låtarna (max 5 s) — undviker det
@@ -223,12 +259,20 @@ def run(job):
         vid = entry["id"]
         shown = entry.get("title") or vid
         log(f"Hämtar ({k}/{len(todo)}): {shown}")
-        try:
-            info = download_one(vid, pdir)
-        except Exception as exc:
-            log(f"Kunde inte hämta: {shown} — {short_error(exc)}", "warn")
+        info = None
+        last_exc = None
+        for i, (ckf, host) in enumerate(attempts):
+            try:
+                info = download_one(vid, pdir, ckf, host)
+                break
+            except Exception as exc:
+                last_exc = exc
+                cleanup_parts(pdir, vid)
+                if i == 0 and ckf is None and len(attempts) > 1:
+                    log("Gick inte anonymt — provar med ditt YouTube-konto …")
+        if info is None:
+            log(f"Kunde inte hämta: {shown} — {short_error(last_exc)}", "warn")
             failed += 1
-            cleanup_parts(pdir, vid)
             continue
 
         tmp = pdir / f".part-{vid}.mp3"
@@ -288,9 +332,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--job")
     ap.add_argument("--probe")
+    ap.add_argument("--cookies")
     args = ap.parse_args()
     if args.probe:
-        probe(args.probe)
+        probe(args.probe, args.cookies)
     elif args.job:
         run(json.loads(args.job))
     else:

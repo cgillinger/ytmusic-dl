@@ -383,12 +383,48 @@ async function syncToPlayer(playlist) {
   }
 }
 
+/* ---------- YouTube-konto (cookies) ---------- */
+
+function renderCookies(st) {
+  st = st || { uploaded: false, mode: "fallback" };
+  $("cookie-status").textContent = st.uploaded
+    ? "Konto kopplat ✓" : "Inget konto kopplat.";
+  $("cookie-remove").hidden = !st.uploaded;
+  $("cookie-mode-row").hidden = !st.uploaded;
+  $("cookie-always").checked = st.mode === "always";
+}
+
+$("cookie-file").addEventListener("change", async () => {
+  const file = $("cookie-file").files[0];
+  $("cookie-error").hidden = true;
+  if (!file) return;
+  try {
+    const content = await file.text();
+    renderCookies(await api("/api/cookies", { method: "POST",
+      body: { content } }));
+  } catch (ex) {
+    $("cookie-error").textContent = ex.message;
+    $("cookie-error").hidden = false;
+  }
+  $("cookie-file").value = "";
+});
+
+$("cookie-remove").addEventListener("click", async () => {
+  renderCookies(await api("/api/cookies", { method: "DELETE" }));
+});
+
+$("cookie-always").addEventListener("change", async () => {
+  renderCookies(await api("/api/cookies", { method: "POST",
+    body: { mode: $("cookie-always").checked ? "always" : "fallback" } }));
+});
+
 /* ---------- sidfot ---------- */
 
 async function refreshMeta() {
   const s = await api("/api/state");
   $("meta-line").textContent =
     `yt-dlp ${s.ytdlp_version ?? "?"} · ffmpeg ${s.ffmpeg_ok ? "OK" : "SAKNAS"}`;
+  renderCookies(s.cookies);
 }
 
 $("btn-update-ytdlp").addEventListener("click", async () => {

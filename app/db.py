@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     name TEXT NOT NULL,
     pw_hash TEXT,
     color TEXT NOT NULL,
+    cookie_mode TEXT NOT NULL DEFAULT 'fallback',
     created TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS playlists (
@@ -57,6 +58,10 @@ def connect() -> sqlite3.Connection:
 def init() -> None:
     with connect() as c:
         c.executescript(SCHEMA)
+        cols = [r["name"] for r in c.execute("PRAGMA table_info(profiles)")]
+        if "cookie_mode" not in cols:
+            c.execute("ALTER TABLE profiles ADD COLUMN cookie_mode TEXT "
+                      "NOT NULL DEFAULT 'fallback'")
         # Jobb som var igång vid en omstart kan inte återupptas.
         c.execute(
             "UPDATE jobs SET status='error', finished=datetime('now') "

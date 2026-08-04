@@ -136,6 +136,11 @@ class PlaylistIn(BaseModel):
     shanling: bool = True
 
 
+class CookiesIn(BaseModel):
+    content: str | None = None
+    mode: str | None = None
+
+
 # ---------- meta / state ----------
 
 @app.get("/api/state")
@@ -146,10 +151,14 @@ def state(request: Request):
     except metadata.PackageNotFoundError:
         ytdlp = None
     public = None
+    cookies = None
     if profile:
         public = {k: profile[k] for k in ("id", "name", "color", "home")}
+        cookies = {"uploaded": _cookie_path(profile["id"]).exists(),
+                   "mode": profile["cookie_mode"]}
     return {
         "profile": public,
+        "cookies": cookies,
         "ytdlp_version": ytdlp,
         "ffmpeg_ok": which("ffmpeg") is not None,
     }
@@ -221,6 +230,52 @@ def login(body: LoginIn, response: Response):
 def logout(response: Response):
     response.delete_cookie(COOKIE)
     return {"ok": True}
+
+
+# ---------- YouTube-konto (cookies) ----------
+
+def _cookie_path(profile_id: int) -> Path:
+    return db.DATA_DIR / "cookies" / f"{profile_id}.txt"
+
+
+@app.post("/api/cookies")
+def set_cookies(body: CookiesIn, profile=Depends(require_profile)):
+    if body.content is not None:
+        content = body.content.strip()
+        data_lines = [l for l in content.splitlines()
+                      if l.strip() and not l.startswith("#")]
+        if not any("youtube.com" in l and "\t" in l for l in data_lines):
+            raise HTTPException(
+                400, "Det där ser inte ut som en cookies.txt-fil från "
+                     "youtube.com — exportera med tillägget "
+                     "\"Get cookies.txt LOCALLY\" och försök igen.")
+        path = _cookie_path(profile["id"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content + "\n", encoding="utf-8")
+        path.chmod(0o600)
+        try:
+            # Ägs av profilägaren — arbetarprocessen (setuid) måste kunna
+            # läsa filen och skriva tillbaka roterade cookies.
+            st = os.stat(HOMES_DIR / profile["home"])
+            os.chown(path, st.st_uid, st.st_gid)
+        except (PermissionError, FileNotFoundError):
+            pass  # utvecklingsläge utan root
+    if body.mode is not None:
+        if body.mode not in ("fallback", "always"):
+            raise HTTPException(400, "Ogiltigt läge.")
+        with db.connect() as c:
+            c.execute("UPDATE profiles SET cookie_mode=? WHERE id=?",
+                      (body.mode, profile["id"]))
+    with db.connect() as c:
+        mode = c.execute("SELECT cookie_mode FROM profiles WHERE id=?",
+                         (profile["id"],)).fetchone()["cookie_mode"]
+    return {"uploaded": _cookie_path(profile["id"]).exists(), "mode": mode}
+
+
+@app.delete("/api/cookies")
+def delete_cookies(profile=Depends(require_profile)):
+    _cookie_path(profile["id"]).unlink(missing_ok=True)
+    return {"uploaded": False, "mode": profile["cookie_mode"]}
 
 
 # ---------- spellistor ----------
@@ -310,9 +365,12 @@ def delete_playlist(playlist_id: int, profile=Depends(require_profile)):
 
 @app.get("/api/playlist-info")
 def playlist_info(url: str, profile=Depends(require_profile)):
+    cmd = [sys.executable, "-m", "app.worker", "--probe", url]
+    ck = _cookie_path(profile["id"])
+    if ck.exists():
+        cmd += ["--cookies", str(ck)]
     result = subprocess.run(
-        [sys.executable, "-m", "app.worker", "--probe", url],
-        capture_output=True, text=True, timeout=90,
+        cmd, capture_output=True, text=True, timeout=120,
         env={**os.environ, "XDG_CACHE_HOME": "/tmp/ymdl-cache-probe"})
     error_msg = None
     for line in result.stdout.splitlines():

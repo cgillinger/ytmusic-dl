@@ -124,6 +124,40 @@
     <p class="hint" id="playlist-empty" hidden>Inga spellistor än. Klistra in en
     länk här ovanför så sätter vi igång.</p>
 
+    <details class="panel acct">
+      <summary>YouTube-konto <span class="muted">(valfritt)</span></summary>
+      <p class="hint">Vissa låtar och privata spellistor kan bara hämtas med
+      ett inloggat YouTube-konto — och med Premium blir ljudkvaliteten högre.
+      Så här kopplar du kontot: installera tillägget
+      <strong>Get cookies.txt LOCALLY</strong> i Chrome/Edge, öppna ett
+      inkognitofönster och logga in på music.youtube.com, exportera
+      cookies.txt för sidan, stäng inkognitofönstret och ladda upp filen här.</p>
+      <p class="hint">Kontot används normalt bara som reserv när en låt inte
+      går att hämta anonymt. Cookies slutar gälla ibland — ladda då bara upp
+      en ny fil.</p>
+      <p class="pl-meta" id="cookie-status"></p>
+      <div class="row">
+        <label class="btn btn-ghost btn-s" for="cookie-file">Ladda upp
+        cookies.txt<input type="file" id="cookie-file" accept=".txt,text/plain"
+        hidden></label>
+        <button class="btn btn-ghost btn-s" id="cookie-remove" hidden>Koppla
+        bort kontot</button>
+      </div>
+      <p class="error" id="cookie-error" hidden></p>
+      <div class="switchrow" id="cookie-mode-row" hidden>
+        <label class="switch">
+          <input type="checkbox" id="cookie-always">
+          <span class="slider" aria-hidden="true"></span>
+        </label>
+        <div>
+          <strong>Använd kontot för alla hämtningar</strong>
+          <p class="hint">Ger bäst ljudkvalitet med Premium (256 kbit/s).
+          Avstängt används kontot bara när en låt inte går att hämta utan
+          inloggning.</p>
+        </div>
+      </div>
+    </details>
+
   </section>
 
 </main>

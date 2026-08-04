@@ -32,6 +32,12 @@ landing in their **own home folder**, formatted for a classic MP3 player
 - **Kid-proof error messages.** Private playlist? Bot check? The UI explains
   what happened and what to do, in plain language, right where you pasted
   the link.
+- **Optional YouTube account (cookies.txt) per profile.** Some catalog
+  tracks are licensed for the Music service only, and private playlists need
+  a login. Upload a cookies.txt and the app retries blocked tracks with your
+  account — or flip a switch to use it for everything, which with a Premium
+  subscription bumps audio quality to 256 kbps AAC. By default the account
+  is only touched when an anonymous download fails.
 - **Copy straight to the player.** In Chrome/Edge over HTTPS, a sync button
   copies only new tracks directly to the player's memory card via the File
   System Access API.
@@ -100,7 +106,14 @@ Put site-specific values in a `docker-compose.override.yml` (gitignored).
 YouTube Music playlists are **private by default**, which the anonymous
 downloader can't read. Set the playlist to **Unlisted** (⋮ → Edit playlist →
 Privacy) — still hidden from search and public profiles, but readable via
-the link. The UI explains this too when it happens.
+the link. The UI explains this too when it happens. Alternatively, connect
+a YouTube account to the profile (see above) and private playlists work
+as-is.
+
+To export cookies safely: install a cookies.txt extension (e.g. "Get
+cookies.txt LOCALLY"), log in to music.youtube.com **in a private/incognito
+window**, export, then close the window — this keeps the exported session
+from being rotated away by your regular browsing.
 
 ## Legal
 
