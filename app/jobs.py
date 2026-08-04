@@ -18,10 +18,36 @@ HOMES_DIR = Path(os.environ.get("HOMES_DIR", "/homes"))
 class Runner:
     def __init__(self):
         self.q: queue.Queue[int] = queue.Queue()
+        self.lock = threading.Lock()
+        self.current: tuple[int, subprocess.Popen] | None = None
+        self.cancelled: set[int] = set()
         threading.Thread(target=self._loop, daemon=True).start()
 
     def enqueue(self, job_id: int):
         self.q.put(job_id)
+
+    def cancel(self, job_id: int) -> bool:
+        """Avbryt ett köat eller pågående jobb."""
+        with self.lock:
+            self.cancelled.add(job_id)
+            if self.current and self.current[0] == job_id:
+                try:
+                    self.current[1].terminate()
+                except OSError:
+                    pass
+                return True
+        with db.connect() as c:
+            row = c.execute("SELECT status FROM jobs WHERE id=?",
+                            (job_id,)).fetchone()
+            if row and row["status"] == "queued":
+                c.execute("UPDATE jobs SET status='cancelled', "
+                          "finished=datetime('now') WHERE id=?", (job_id,))
+                c.execute("INSERT INTO job_log (job_id, level, msg) "
+                          "VALUES (?,?,?)",
+                          (job_id, "warn", "Hämtningen avbröts innan den "
+                                           "hann starta."))
+                return True
+        return False
 
     def _loop(self):
         while True:
@@ -54,6 +80,10 @@ class Runner:
                 (job_id,)).fetchone()
             if not row:
                 return
+            status = c.execute("SELECT status FROM jobs WHERE id=?",
+                               (job_id,)).fetchone()["status"]
+            if status != "queued":
+                return  # avbrutet innan det hann starta
             c.execute("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
 
         home = HOMES_DIR / row["home"]
@@ -95,6 +125,8 @@ class Runner:
             cmd, cwd="/srv" if Path("/srv/app").is_dir() else None,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, env=env, preexec_fn=preexec)
+        with self.lock:
+            self.current = (job_id, proc)
 
         stderr_tail = collections.deque(maxlen=40)
         t = threading.Thread(
@@ -123,6 +155,27 @@ class Runner:
 
         proc.wait()
         t.join(timeout=5)
+        with self.lock:
+            self.current = None
+            was_cancelled = job_id in self.cancelled
+            self.cancelled.discard(job_id)
+
+        if was_cancelled:
+            # Städa halvfärdiga filer — arkivet skrivs bara för kompletta
+            # låtar, så en omkörning fortsätter exakt där den slutade.
+            pdir = home / "Musik" / "Spelaren" / row["folder"]
+            if pdir.is_dir():
+                for leftover in list(pdir.glob(".part-*")) + \
+                        list(pdir.glob(".ren-*")):
+                    try:
+                        leftover.unlink()
+                    except OSError:
+                        pass
+            self._log(job_id, "Hämtningen avbröts på din begäran. Redan "
+                              "hämtade låtar ligger kvar — 'Hämta nya "
+                              "låtar' fortsätter där den slutade.", "warn")
+            self._finish(job_id, "cancelled")
+            return
 
         if done is not None and proc.returncode == 0:
             status = "done" if not done.get("failed") else \

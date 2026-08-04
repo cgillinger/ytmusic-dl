@@ -92,13 +92,81 @@ def read_archive(path: Path):
     return ids
 
 
-def next_number(pdir: Path) -> int:
-    highest = 0
+MANIFEST_NAME = "_tracks.json"
+NUM_PREFIX = re.compile(r"^\d{3} - ")
+
+
+def load_manifest(pdir: Path) -> dict:
+    path = pdir / MANIFEST_NAME
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+    return {}
+
+
+def save_manifest(pdir: Path, manifest: dict):
+    (pdir / MANIFEST_NAME).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def bootstrap_manifest(pdir: Path, entries, manifest: dict, archived: set):
+    """Mappar skapade före id→fil-kartan: återskapa kopplingen genom att
+    matcha spellistans titlar mot filnamnen."""
+    taken = set(manifest.values())
+    files = [f.name for f in pdir.iterdir()
+             if f.suffix == ".mp3" and not f.name.startswith(".")]
+    for e in entries:
+        vid = e.get("id")
+        if not vid or vid in manifest or vid not in archived:
+            continue
+        title = sanitize(e.get("title") or "", 80).lower()
+        if not title:
+            continue
+        hits = [f for f in files
+                if f not in taken and title in f.lower()]
+        if len(hits) == 1:
+            manifest[vid] = hits[0]
+            taken.add(hits[0])
+    return manifest
+
+
+def renumber(pdir: Path, entries, manifest: dict) -> int:
+    """Numret på disk = spårets position i spellistan, alltid. Filer vars
+    låt strukits ur spellistan behåller filen men förlorar sitt nummer."""
+    renames = []
+    used = set()
+    pos = 0
+    for e in entries:
+        fn = manifest.get(e.get("id"))
+        if not fn or fn in used or not (pdir / fn).exists():
+            continue
+        pos += 1
+        used.add(fn)
+        target = f"{pos:03d} - {NUM_PREFIX.sub('', fn)}"
+        if target != fn:
+            renames.append((fn, target))
     for f in pdir.iterdir():
-        m = NUMBERED.match(f.name)
-        if m:
-            highest = max(highest, int(m.group(1)))
-    return highest + 1
+        if (f.suffix == ".mp3" and not f.name.startswith(".")
+                and f.name not in used and NUM_PREFIX.match(f.name)):
+            renames.append((f.name, NUM_PREFIX.sub("", f.name)))
+    if not renames:
+        return 0
+    # Tvåstegsbyte via temporära namn — nummer som roterar krockar annars.
+    for i, (src, _) in enumerate(renames):
+        (pdir / src).rename(pdir / f".ren-{i}")
+    for i, (src, dst) in enumerate(renames):
+        final = pdir / dst
+        n = 2
+        while final.exists():
+            final = pdir / f"{dst[:-4]} ({n}).mp3"
+            n += 1
+        (pdir / f".ren-{i}").rename(final)
+        for vid, name in list(manifest.items()):
+            if name == src:
+                manifest[vid] = final.name
+    return len(renames)
 
 
 def pick_artist(info) -> str:
@@ -416,6 +484,7 @@ def run(job):
 
     archive_path = pdir / "_archive.txt"
     archived = read_archive(archive_path)
+    manifest = bootstrap_manifest(pdir, entries, load_manifest(pdir), archived)
 
     todo = [e for e in entries if e.get("id") and e["id"] not in archived]
     missing_id = sum(1 for e in entries if not e.get("id"))
@@ -427,7 +496,6 @@ def run(job):
             f"— hoppar över.", "warn")
 
     new = failed = 0
-    number = next_number(pdir) if shanling else 0
 
     if always:
         # Sista anonyma försöket är ett skyddsnät: en trasig cookie-session
@@ -511,14 +579,13 @@ def run(job):
                     track_name = track_name[len(prefix):]
         artist = sanitize(raw_artist, 60)
         track = sanitize(track_name, 80)
-        if shanling:
-            final = pdir / sanitize(f"{number:03d} - {artist} - {track}", 120)
-            final = final.with_name(final.name + ".mp3")
-            number += 1
-        else:
-            final = unique_path(pdir, sanitize(f"{artist} - {track}", 120))
+        # Numret sätts inte här — omnumreringen efteråt ger varje fil
+        # exakt sin position i spellistan.
+        final = unique_path(pdir, sanitize(f"{artist} - {track}", 120))
         tmp.rename(final)
         cleanup_parts(pdir, dl_id)
+        manifest[vid] = final.name
+        save_manifest(pdir, manifest)
         if retag:
             # Videon saknade riktiga låt-taggar — sätt samma artist/titel
             # i ID3 som i filnamnet (annars visar spelaren råtiteln).
@@ -548,6 +615,11 @@ def run(job):
         log(f"Klar: {final.name}")
 
     if shanling:
+        changed = renumber(pdir, entries, manifest)
+        save_manifest(pdir, manifest)
+        if changed:
+            log(f"Numrerade filerna efter spellistans ordning "
+                f"({changed} namnbyten).")
         total = write_m3u(base, folder)
         log(f"Spellistfil uppdaterad: _explaylist_data/{folder}.m3u "
             f"({total} låtar).")

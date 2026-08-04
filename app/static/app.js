@@ -320,6 +320,13 @@ function pollJob(jobId) {
   $("job-bar").style.width = "0";
   $("job-title").textContent = "Hämtar …";
   $("job-cassette").classList.add("spinning");
+  $("job-actions").hidden = false;
+  $("btn-cancel").disabled = false;
+  $("btn-cancel").onclick = async () => {
+    $("btn-cancel").disabled = true;
+    try { await api(`/api/jobs/${jobId}/cancel`, { method: "POST" }); }
+    catch (ex) { modal("Hoppsan", el("p", {}, ex.message)); }
+  };
 
   const tick = async () => {
     let job;
@@ -340,9 +347,10 @@ function pollJob(jobId) {
     if (job.log.length && nearBottom) logEl.scrollTop = logEl.scrollHeight;
     $("job-bar").style.width = (job.progress ?? 0) + "%";
 
-    if (job.status === "done" || job.status === "error") {
+    if (["done", "error", "cancelled"].includes(job.status)) {
       clearInterval(state.pollTimer);
       $("job-cassette").classList.remove("spinning");
+      $("job-actions").hidden = true;
       $("job-bar").style.width = "100%";
       const s = $("job-summary");
       if (job.status === "done") {
@@ -350,6 +358,9 @@ function pollJob(jobId) {
           `${job.skipped ?? 0} fanns redan` +
           (job.failed ? ` — ${job.failed} gick inte att hämta.` : ".");
         s.className = "summary ok";
+      } else if (job.status === "cancelled") {
+        s.textContent = "Hämtningen avbröts. Redan hämtade låtar ligger kvar.";
+        s.className = "summary warn";
       } else {
         s.textContent = "Hämtningen misslyckades — se loggen ovanför.";
         s.className = "summary error";
@@ -402,6 +413,16 @@ async function syncToPlayer(playlist) {
       await res.body.pipeTo(w);
       copied++;
     }
+    // Ta bort mp3:or på kortet som inte längre finns i spellistmappen —
+    // omnumreringen byter filnamn när spellistans ordning ändras.
+    let removed = 0;
+    for (const name of existing) {
+      if (name.toLowerCase().endsWith(".mp3") &&
+          !manifest.files.includes(name)) {
+        await dir.removeEntry(name);
+        removed++;
+      }
+    }
     if (manifest.m3u) {
       const m3uDir = await root.getDirectoryHandle("_explaylist_data",
         { create: true });
@@ -410,9 +431,10 @@ async function syncToPlayer(playlist) {
       await w.write(manifest.m3u.content);
       await w.close();
     }
-    status.textContent = copied
-      ? `Klart! ${copied} nya låtar kopierade till kortet. Importera ` +
-        "spellistan på spelaren: My Music → Playlists → ⋮ → Import."
+    status.textContent = copied || removed
+      ? `Klart! ${copied} nya låtar kopierade` +
+        (removed ? `, ${removed} inaktuella borttagna` : "") +
+        ". Importera spellistan på spelaren: My Music → Playlists → ⋮ → Import."
       : "Kortet var redan uppdaterat — inga nya låtar att kopiera.";
   } catch (ex) {
     status.textContent = "Kopieringen misslyckades: " + ex.message;

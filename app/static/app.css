@@ -367,6 +367,7 @@ input:focus-visible {
 
 .summary { font-weight: 700; margin: 14px 0 0; }
 .summary.ok { color: var(--ok); }
+.summary.warn { color: var(--warn); }
 .summary.error { color: var(--rec); }
 
 /* ---------- YouTube-kontosektionen ---------- */

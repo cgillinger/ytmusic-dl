@@ -313,7 +313,8 @@ def playlists(profile=Depends(require_profile)):
             "  ('queued','running') ORDER BY j.id DESC LIMIT 1) AS active_job, "
             " (SELECT json_object('status', status, 'new', new, 'skipped', "
             "   skipped, 'failed', failed, 'finished', finished) FROM jobs j "
-            "  WHERE j.playlist_id=p.id AND j.status IN ('done','error') "
+            "  WHERE j.playlist_id=p.id AND j.status IN "
+            "  ('done','error','cancelled') "
             "  ORDER BY j.id DESC LIMIT 1) AS last_job "
             "FROM playlists p WHERE p.profile_id=? ORDER BY p.created DESC",
             (profile["id"],)).fetchall()
@@ -388,6 +389,19 @@ def playlist_info(url: str, profile=Depends(require_profile)):
 
 
 # ---------- jobb ----------
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: int, profile=Depends(require_profile)):
+    with db.connect() as c:
+        job = c.execute("SELECT status FROM jobs WHERE id=? AND profile_id=?",
+                        (job_id, profile["id"])).fetchone()
+    if not job:
+        raise HTTPException(404, "Jobbet finns inte.")
+    if job["status"] not in ("queued", "running"):
+        raise HTTPException(409, "Jobbet är redan klart.")
+    runner.cancel(job_id)
+    return {"ok": True}
+
 
 @app.get("/api/jobs/active")
 def active_job(profile=Depends(require_profile)):
