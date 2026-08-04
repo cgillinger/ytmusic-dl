@@ -494,7 +494,7 @@ def _track_meta(path: Path) -> dict:
     from mutagen.mp3 import MP3
     meta = {"file": path.name, "size": st.st_size, "mtime": int(st.st_mtime),
             "artist": None, "title": None, "duration": None, "bitrate": None,
-            "has_cover": False}
+            "has_cover": False, "note": None}
     try:
         mp3 = MP3(path)
         meta["duration"] = round(mp3.info.length)
@@ -506,6 +506,10 @@ def _track_meta(path: Path) -> dict:
         meta["artist"] = str(id3.get("TPE1", "")) or None
         meta["title"] = str(id3.get("TIT2", "")) or None
         meta["has_cover"] = bool(id3.getall("APIC"))
+        for comm in id3.getall("COMM"):
+            if getattr(comm, "desc", "") == "ymdl" and comm.text:
+                meta["note"] = str(comm.text[0])
+                break
     except Exception:
         pass
     if len(_meta_cache) > 4000:

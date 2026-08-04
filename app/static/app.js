@@ -572,7 +572,10 @@ function renderTracks() {
         : el("span", { class: "t-cover" }),
       el("span", { class: "t-meta" },
         el("div", { class: "t-title" },
-          t.title || t.file.replace(/\.mp3$/, "")),
+          t.title || t.file.replace(/\.mp3$/, ""),
+          ...(t.note && t.note.startsWith("Alternativ")
+            ? [el("span", { class: "t-alt", title: t.note }, "annan utgåva")]
+            : [])),
         el("div", { class: "t-artist" }, t.artist || "")),
       el("span", { class: "t-len" }, fmtTime(t.duration)),
       el("button", { class: "t-info", "aria-label": "Fakta om låten",
@@ -589,6 +592,7 @@ function showFacts(t) {
   if (t.bitrate) add("Ljudkvalitet", `${t.bitrate} kbit/s`);
   add("Filstorlek", `${(t.size / 1048576).toFixed(1)} MB`);
   add("Hämtad", new Date(t.mtime * 1000).toLocaleDateString("sv-SE"));
+  if (t.note) add("Källa", t.note);
   add("Fil", t.file);
   const box = el("div", { class: "factbox" });
   if (t.has_cover) box.append(el("img", { alt: "", src: coverUrl(lib.plId, t) }));

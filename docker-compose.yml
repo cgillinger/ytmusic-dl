@@ -12,4 +12,8 @@ services:
       # Hide extra accounts from the profile picker (admin/guest always hidden).
       # Put site-specific values in docker-compose.override.yml (not in git):
       # - HOMES_EXCLUDE=serviceuser1,serviceuser2
+      # Spotify playlists as source (metadata only; audio comes from YouTube).
+      # Create a free app at developer.spotify.com and set:
+      # - SPOTIFY_CLIENT_ID=...
+      # - SPOTIFY_CLIENT_SECRET=...
     restart: unless-stopped

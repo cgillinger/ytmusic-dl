@@ -120,6 +120,23 @@ Lägg platsspecifika värden i en `docker-compose.override.yml` (gitignorad).
   Omvänd proxy) från en HTTPS-port till `http://localhost:8201`.
   Självsignerat certifikat räcker — exponera ingenting mot internet.
 
+## Spotify-spellistor
+
+Klistra in en Spotify-länk (spellista, album eller enskilt spår) så läser
+appen **metadata** via Spotifys officiella API och hämtar ljudet **från
+YouTube** — samma modell som spotDL. Spotifys strömmar rörs aldrig (de är
+DRM-skyddade; att rippa dem vore både olagligt på ett annat sätt och en
+risk för kontot). Matchningen sker på artist + titel med längdkontroll,
+och omslagen tas från Spotifys albumkonst. Ärlig brasklapp: matchning via
+sök kan någon gång välja fel utgåva (radio edit i stället för
+albumversion) — biblioteksspelaren gör det lätt att kontrollyssna.
+
+Kräver gratis API-nycklar: skapa en app på
+[developer.spotify.com](https://developer.spotify.com/dashboard) och lägg
+`SPOTIFY_CLIENT_ID` och `SPOTIFY_CLIENT_SECRET` i
+`docker-compose.override.yml`. Utan nycklar förklarar appen vad som saknas
+när någon klistrar in en Spotify-länk.
+
 ## Om privata spellistor
 
 YouTube Music-spellistor är **privata som standard**, och sådana kan inte

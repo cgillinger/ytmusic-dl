@@ -14,6 +14,7 @@ yt-dlp gäller från och med nästa jobb utan omstart av containern.
 """
 import argparse
 import json
+import os
 import random
 import re
 import sys
@@ -67,15 +68,98 @@ def flat_entries(url, cookiefile=None):
     return info.get("title") or "Spellista", entries
 
 
+SPOTIFY_RE = re.compile(
+    r"open\.spotify\.com/(?:intl-[a-z]+/)?(playlist|album|track)/([A-Za-z0-9]+)")
+
+
+def spotify_token() -> str:
+    import base64
+    import urllib.request
+    cid = os.environ.get("SPOTIFY_CLIENT_ID")
+    secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
+    if not cid or not secret:
+        raise RuntimeError(
+            "Spotify-länkar kräver API-nycklar: skapa en gratis app på "
+            "developer.spotify.com, och lägg SPOTIFY_CLIENT_ID och "
+            "SPOTIFY_CLIENT_SECRET i docker-compose.override.yml.")
+    req = urllib.request.Request(
+        "https://accounts.spotify.com/api/token",
+        data=b"grant_type=client_credentials",
+        headers={"Authorization": "Basic " + base64.b64encode(
+            f"{cid}:{secret}".encode()).decode()})
+    return json.loads(
+        urllib.request.urlopen(req, timeout=15).read())["access_token"]
+
+
+def _spotify_get(path: str, token: str):
+    import urllib.request
+    req = urllib.request.Request(
+        "https://api.spotify.com/v1" + path,
+        headers={"Authorization": f"Bearer {token}"})
+    return json.loads(urllib.request.urlopen(req, timeout=20).read())
+
+
+def _spotify_track_entry(track, album=None):
+    if not track or not track.get("id"):
+        return None
+    alb = track.get("album") or album or {}
+    images = alb.get("images") or []
+    return {
+        "id": track["id"], "spotify": True,
+        "title": track.get("name") or track["id"],
+        "artist": ", ".join(a.get("name", "")
+                            for a in track.get("artists") or []),
+        "album": alb.get("name"),
+        "duration": round((track.get("duration_ms") or 0) / 1000) or None,
+        "cover_url": images[0]["url"] if images else None,
+    }
+
+
+def spotify_entries(url):
+    """Spotify som spellistkälla: metadata via officiella API:t —
+    ljudet hämtas aldrig från Spotify utan matchas mot YouTube."""
+    m = SPOTIFY_RE.search(url)
+    kind, sid = m.group(1), m.group(2)
+    token = spotify_token()
+    if kind == "track":
+        entry = _spotify_track_entry(_spotify_get(f"/tracks/{sid}", token))
+        title = f"{entry['artist']} – {entry['title']}" if entry else "Spår"
+        return title, [entry] if entry else []
+    if kind == "album":
+        alb = _spotify_get(f"/albums/{sid}", token)
+        items = (alb.get("tracks") or {}).get("items") or []
+        entries = [_spotify_track_entry(t, album=alb) for t in items]
+        return alb.get("name") or "Album", [e for e in entries if e]
+    name = _spotify_get(f"/playlists/{sid}?fields=name", token).get("name")
+    entries, offset = [], 0
+    while True:
+        page = _spotify_get(
+            f"/playlists/{sid}/tracks?limit=100&offset={offset}", token)
+        for item in page.get("items") or []:
+            entry = _spotify_track_entry((item or {}).get("track"))
+            if entry:
+                entries.append(entry)
+        if not page.get("next"):
+            break
+        offset += 100
+    return name or "Spellista", entries
+
+
+def get_entries(url, cookiefile=None):
+    if SPOTIFY_RE.search(url):
+        return spotify_entries(url)
+    return flat_entries(url, cookiefile)
+
+
 def probe(url, cookiefile=None):
     try:
-        title, entries = flat_entries(url)
+        title, entries = get_entries(url)
     except Exception as exc:
-        if not cookiefile:
+        if not cookiefile or SPOTIFY_RE.search(url):
             log(short_error(exc), "error")
             sys.exit(1)
         try:
-            title, entries = flat_entries(url, cookiefile)
+            title, entries = get_entries(url, cookiefile)
         except Exception as exc2:
             log(short_error(exc2), "error")
             sys.exit(1)
@@ -279,6 +363,20 @@ def fetch_original_cover(entry, dest_dir: Path):
     return None
 
 
+def fetch_url_cover(url: str, dest_dir: Path):
+    import urllib.request
+    try:
+        data = urllib.request.urlopen(urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15).read()
+        if len(data) > 5000:
+            raw = dest_dir / ".cover-raw"
+            raw.write_bytes(data)
+            return raw
+    except Exception:
+        pass
+    return None
+
+
 def entry_square_art(entry, dest_dir: Path):
     """Postens egen kvadratiska albumkonst (lh3) — finns i vissa
     spellisttyper och är då facit."""
@@ -460,14 +558,15 @@ def run(job):
         log("Använder ditt YouTube-konto för hämtningarna.")
 
     log("Läser spellistan …")
+    is_spotify_list = bool(SPOTIFY_RE.search(job["url"]))
     try:
-        title, entries = flat_entries(job["url"], ck if always else None)
+        title, entries = get_entries(job["url"], ck if always else None)
     except Exception as exc:
-        if ck and not always:
+        if ck and not always and not is_spotify_list:
             log("Kunde inte läsa spellistan anonymt — provar med ditt "
                 "YouTube-konto …")
             try:
-                title, entries = flat_entries(job["url"], ck)
+                title, entries = get_entries(job["url"], ck)
             except Exception as exc2:
                 log(f"Kunde inte läsa spellistan: {short_error(exc2)}", "error")
                 emit(t="done", new=0, skipped=0, failed=1)
@@ -495,7 +594,7 @@ def run(job):
         log(f"{missing_id} poster gick inte att identifiera (borttagna?) "
             f"— hoppar över.", "warn")
 
-    new = failed = 0
+    new = failed = subs = 0
 
     if always:
         # Sista anonyma försöket är ett skyddsnät: en trasig cookie-session
@@ -515,21 +614,50 @@ def run(job):
         vid = entry["id"]
         dl_id = vid
         substituted = False
-        shown = entry.get("title") or vid
+        alt_note = None
+        from_spotify = bool(entry.get("spotify"))
+        shown = (f"{entry['artist']} – {entry['title']}"
+                 if from_spotify and entry.get("artist")
+                 else entry.get("title") or vid)
         log(f"Hämtar ({k}/{len(todo)}): {shown}")
         info = None
         last_exc = None
-        for i, (ckf, host) in enumerate(attempts):
-            try:
-                info = download_one(vid, pdir, ckf, host)
-                break
-            except Exception as exc:
-                last_exc = exc
-                cleanup_parts(pdir, vid)
-                if i == 0 and ckf is None and len(attempts) > 1:
-                    log("Gick inte anonymt — provar med ditt YouTube-konto …")
 
-        if info is None and is_unavailable(last_exc):
+        if from_spotify:
+            # Spotify-spår har inget YouTube-id — sök upp bästa motsvarighet.
+            match = rescue_search(entry.get("artist") or "",
+                                  entry.get("title") or "",
+                                  entry.get("duration"))
+            if not match:
+                log(f"Hittade ingen YouTube-motsvarighet: {shown}", "warn")
+                failed += 1
+                continue
+            log(f"YouTube-träff: {match.get('title')} "
+                f"({match.get('channel') or match.get('uploader')})")
+            alt_note = (f"Matchad från Spotify mot YouTube: "
+                        f"{match.get('title')} "
+                        f"({match.get('channel') or match.get('uploader')})")
+            for ckf, host in attempts:
+                try:
+                    info = download_one(match["id"], pdir, ckf, host)
+                    dl_id = match["id"]
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    cleanup_parts(pdir, match["id"])
+        else:
+            for i, (ckf, host) in enumerate(attempts):
+                try:
+                    info = download_one(vid, pdir, ckf, host)
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    cleanup_parts(pdir, vid)
+                    if i == 0 and ckf is None and len(attempts) > 1:
+                        log("Gick inte anonymt — provar med ditt "
+                            "YouTube-konto …")
+
+        if info is None and not from_spotify and is_unavailable(last_exc):
             sub_artist = re.sub(r"\s*-\s*Topic$", "",
                                 entry.get("uploader")
                                 or entry.get("channel") or "")
@@ -544,6 +672,10 @@ def run(job):
                         info = download_one(sub["id"], pdir, ckf, host)
                         dl_id = sub["id"]
                         substituted = True
+                        alt_note = (f"Alternativ utgåva (originalet "
+                                    f"borttaget från YouTube): "
+                                    f"{sub.get('title')} "
+                                    f"({sub.get('channel') or sub.get('uploader')})")
                         break
                     except Exception as exc:
                         last_exc = exc
@@ -561,7 +693,12 @@ def run(job):
             cleanup_parts(pdir, dl_id)
             continue
 
-        if substituted:
+        if from_spotify:
+            # Spotifys metadata är facit — inte YouTube-träffens titel.
+            raw_artist = entry.get("artist") or pick_artist(info)
+            track_name = entry.get("title") or info.get("title") or dl_id
+            retag = True
+        elif substituted:
             # Ersättningsutgåva: originalpostens rena namn, inte
             # YouTube-titeln med "(Official Audio)"-svansar.
             raw_artist = sub_artist or pick_artist(info)
@@ -586,21 +723,30 @@ def run(job):
         cleanup_parts(pdir, dl_id)
         manifest[vid] = final.name
         save_manifest(pdir, manifest)
-        if retag:
-            # Videon saknade riktiga låt-taggar — sätt samma artist/titel
-            # i ID3 som i filnamnet (annars visar spelaren råtiteln).
+        if retag or alt_note:
+            # Sätt samma artist/titel i ID3 som i filnamnet, och skriv in
+            # ev. anteckning om alternativ utgåva/Spotify-matchning som
+            # COMM-tagg — den följer med filen och visas i faktarutan.
             try:
-                from mutagen.id3 import ID3, TIT2, TPE1
+                from mutagen.id3 import COMM, ID3, TIT2, TPE1
                 id3 = ID3(final)
-                id3.setall("TIT2", [TIT2(encoding=3, text=[track_name])])
-                id3.setall("TPE1", [TPE1(encoding=3, text=[raw_artist])])
+                if retag:
+                    id3.setall("TIT2", [TIT2(encoding=3, text=[track_name])])
+                    id3.setall("TPE1", [TPE1(encoding=3, text=[raw_artist])])
+                if alt_note:
+                    id3.add(COMM(encoding=3, lang="swe", desc="ymdl",
+                                 text=[alt_note]))
                 id3.save(final)
             except Exception:
                 pass
-        # Omslagstrappa: 1) postens egen kvadratiska konst (facit när den
-        # finns), 2) originalets konst för ersatta spår, 3) iTunes för
-        # video-poster, 4) behåll den beskurna videominiatyren.
-        raw, src = entry_square_art(entry, pdir), None
+        # Omslagstrappa: 0) Spotifys albumkonst (facit för Spotify-spår),
+        # 1) postens egen kvadratiska konst, 2) originalets konst för
+        # ersatta spår, 3) iTunes för video-poster, 4) videominiatyren.
+        raw, src = None, None
+        if from_spotify and entry.get("cover_url"):
+            raw = fetch_url_cover(entry["cover_url"], pdir)
+        if raw is None:
+            raw = entry_square_art(entry, pdir)
         if raw is None and substituted:
             raw, src = fetch_original_cover(entry, pdir), "originalspåret"
         if raw is None and retag:
@@ -610,9 +756,15 @@ def run(job):
             log(f"Omslag hämtat från {src}.")
         # Arkivet uppdateras endast för fullständigt klara låtar.
         with archive_path.open("a", encoding="utf-8") as fh:
-            fh.write(f"youtube {vid}\n")
+            fh.write(f"{'spotify' if from_spotify else 'youtube'} {vid}\n")
         new += 1
+        if substituted:
+            subs += 1
         log(f"Klar: {final.name}")
+
+    if subs:
+        log(f"{subs} låt{'ar' if subs > 1 else ''} hämtades som alternativ "
+            f"utgåva — detaljer via ⓘ-knappen i biblioteket.", "warn")
 
     if shanling:
         changed = renumber(pdir, entries, manifest)
