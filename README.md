@@ -1,124 +1,138 @@
 # 📼 Musik till spelaren (ytmusic-dl)
 
-A family-friendly, self-hosted web app for downloading YouTube Music playlists
-as MP3s — built to run on a Synology NAS, with each family member's music
-landing in their **own home folder**, formatted for a classic MP3 player
-(Shanling M0s). Swedish UI, designed so a kid can use it without instructions.
+> **In English:** Self-hosted web app for a Synology NAS that downloads
+> YouTube Music playlists as MP3s into each family member's own home folder,
+> formatted for a classic MP3 player (Shanling M0s) — with a built-in library
+> view and in-browser player. The app UI is in Swedish, and so is the rest of
+> this README.
+
+En självhostad webbapp för familjens NAS: klistra in en YouTube
+Music-spellista och få den nedladdad som MP3 rakt in i din egen hemkatalog,
+färdigformaterad för en klassisk mp3-spelare. Byggd för att en datorovan
+14-åring ska kunna använda den utan instruktioner — och för att en förälder
+ska slippa underhålla den.
 
 ![Huvudvyn — pågående hämtning med snurrande kassettrullar](docs/screenshots/huvudvyn.png)
 
-## Features
+## Vad den gör
 
-- **Paste a link → get MP3s.** Best-quality audio, clean ID3 tags and a
-  square-cropped embedded cover (players show square art best).
-- **Multi-user without accounts to manage.** Profiles map 1:1 to the NAS
-  user home directories (`/volume2/homes/<user>`). New NAS users appear
-  automatically. Passwords are optional per profile — leave the field empty
-  for a one-click profile.
-- **Correct file ownership.** Each download job runs as the profile owner's
-  uid/gid, so files are immediately editable over SMB. No root-owned
-  surprises.
-- **Incremental by design.** A per-playlist download archive means re-running
-  a growing playlist only fetches the new tracks, numbered right after the
-  existing ones.
-- **MP3-player mode** (per playlist, on by default): tracks are numbered in
-  playlist order (`001 - Artist - Title.mp3`) and a relative-path `.m3u` is
-  generated the way the Shanling M0s wants it. Toggle it off for plain
-  `Artist - Title.mp3` files.
-- **Gentle on YouTube.** One sequential download worker, randomized 1–5 s
-  pauses between tracks, paced API requests — no burst patterns.
-- **Self-updating yt-dlp** on container start plus a one-click update button;
-  the worker imports yt-dlp fresh per job, so updates apply without restarts.
-- **Kid-proof error messages.** Private playlist? Bot check? The UI explains
-  what happened and what to do, in plain language, right where you pasted
-  the link.
-- **Optional YouTube account (cookies.txt) per profile.** Some catalog
-  tracks are licensed for the Music service only, and private playlists need
-  a login. Upload a cookies.txt and the app retries blocked tracks with your
-  account — or flip a switch to use it for everything, which with a Premium
-  subscription bumps audio quality to 256 kbps AAC. By default the account
-  is only touched when an anonymous download fails.
-- **Copy straight to the player.** In Chrome/Edge over HTTPS, a sync button
-  copies only new tracks directly to the player's memory card via the File
-  System Access API.
-- **Cassette-deck UI.** Label-stripe colors per playlist, an amber VFD-style
-  log, and a cassette whose reels spin while a download runs.
+- **Klistra in en länk → få MP3:or.** Bästa tillgängliga ljudkvalitet, rena
+  ID3-taggar och kvadratiskt beskuret inbäddat omslag (som små spelarskärmar
+  visar bäst).
+- **Flera användare utan kontokrångel.** Profiler mappar 1:1 mot NAS:ens
+  hemkataloger (`/volume2/homes/<användare>`). Nya Synology-konton dyker upp
+  automatiskt. Lösenord är valfritt per profil — tomt fält ger
+  ettklicksprofil.
+- **Rätt filägare.** Varje nedladdningsjobb körs som profilägarens uid/gid,
+  så filerna är direkt redigerbara över SMB.
+- **Inkrementell.** Ett arkiv per spellista gör att omkörningar bara hämtar
+  nya låtar. En växande spellista är grundanvändningsfallet.
+- **Numret på disk = spårets position i spellistan, alltid.** En id→fil-karta
+  per mapp numrerar om filerna när listan ändras. Låtar som strukits ur
+  listan behåller sin fil men förlorar numret.
+- **Mp3-spelarläge** (per spellista, på som standard): numrerade filnamn
+  (`001 - Artist - Titel.mp3`) plus en `.m3u` med relativa sökvägar så som
+  Shanling M0s vill ha den. Av ger rena `Artist - Titel.mp3`-filer.
+- **Bibliotek med spelare.** Hylla med spellistorna som omslagscollage,
+  spårlistor med skivomslag, faktaruta per låt (artist, titel, längd,
+  ljudkvalitet, filstorlek, hämtdatum) och en fast mini-spelare — kassettens
+  rullar snurrar medan musiken spelar. Senast spelade låten överlever
+  sidladdningar.
+- **Självläkande nedladdningar.** Borttagna videor ersätts automatiskt med
+  en annan utgåva av samma låt (längdmatchning, officiella uppladdningar
+  premieras) — och omslaget hämtas då från originalspåret eller iTunes så
+  det blir albumkonst, inte en videoruta.
+- **YouTube-konto, valfritt per profil** (cookies.txt): låser upp kontolåsta
+  spår och privata spellistor, och med Premium-prenumeration blir ljudet
+  256 kbit/s. Som standard används kontot bara när anonym hämtning nekas.
+- **Snäll mot YouTube och NAS:en.** En sekventiell hämtningskö med slumpade
+  pauser mellan låtarna — och tydlig kö-status i UI:t, med avbryt-knapp.
+- **Självuppdaterande yt-dlp** vid varje containerstart plus en knapp i UI:t;
+  arbetaren läser in yt-dlp färskt per jobb, så uppdateringar gäller utan
+  omstart.
+- **Kopiera direkt till spelaren.** I Chrome/Edge över HTTPS synkar en knapp
+  bara nya låtar rakt till minneskortet (File System Access API) och städar
+  bort omdöpta gamla filer.
+- **Begripliga fel på svenska.** Privat spellista? Bot-kontroll? Avbruten av
+  omstart? Appen förklarar vad som hänt och vad man gör åt det, där man
+  tittar.
+
+![Biblioteket — spårlista med omslag och spelare](docs/screenshots/biblioteket.png)
 
 ![Profilvalet](docs/screenshots/profilvalet.png)
 
-## How it works
+## Hur den funkar
 
-FastAPI backend + vanilla JS frontend in a single container. Downloads use
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) as a library with ffmpeg for MP3
-conversion and cover embedding. Jobs are queued and executed one at a time by
-a worker subprocess that drops privileges to the profile owner before writing
-anything. Profiles and job history live in a small SQLite database.
+FastAPI-backend + vanilla JS-frontend i en enda container. Nedladdningar via
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) som bibliotek med ffmpeg för
+MP3-konvertering och omslagsinbäddning; Deno finns i imagen för yt-dlp:s
+JavaScript-utmaningslösare (krävs för inloggade sessioner). Jobben köas och
+körs ett i taget av en arbetarprocess som byter till profilägarens
+uid/gid innan något skrivs. Profiler och jobbhistorik ligger i en liten
+SQLite-databas.
 
-Output structure per user:
+Utdatastruktur per användare:
 
 ```
-<home>/Musik/Spelaren/
-  <Playlist name>/
-    001 - Artist - Title.mp3
-    _archive.txt              ← dedup archive (yt-dlp format)
+<hem>/Musik/Spelaren/
+  <Spellistans namn>/
+    001 - Artist - Titel.mp3
+    _archive.txt              ← dubblettskydd (yt-dlp-format)
+    _tracks.json              ← id→fil-karta för omnumrering
   _explaylist_data/
-    <Playlist name>.m3u       ← relative paths, regenerated every run
+    <Spellistans namn>.m3u    ← relativa sökvägar, regenereras varje körning
 ```
 
-Copy `Musik/Spelaren/` to the player's memory card as-is — the folder layout
-mirrors the card.
+Kopiera `Musik/Spelaren/` till spelarens minneskort som den är —
+mappstrukturen speglar kortet.
 
-## Quick start
+## Kom igång
 
-Requires a Docker host with the user home directories you want to serve.
+Kräver en Docker-värd med de hemkataloger som ska serveras.
 
 ```bash
 git clone https://github.com/cgillinger/ytmusic-dl.git
 cd ytmusic-dl
-mkdir data          # must exist before first start (Synology won't create it)
+mkdir data          # måste finnas före första starten (Synology skapar den inte)
 docker compose up -d --build
 ```
 
-Open `http://<host>:8201`, create a profile, paste a playlist link.
+Öppna `http://<värd>:8201`, skapa en profil, klistra in en spellistlänk.
 
-### Configuration (environment variables)
+### Konfiguration (miljövariabler)
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `HOMES_DIR` | `/homes` | Where user home directories are mounted |
-| `DATA_DIR` | `/data` | SQLite database + session secret |
-| `PORT` | `8201` | HTTP port |
-| `HOMES_EXCLUDE` | *(empty)* | Comma-separated accounts to hide from the profile picker (`admin`/`guest` are always hidden) |
+| Variabel | Standard | Syfte |
+|----------|----------|-------|
+| `HOMES_DIR` | `/homes` | Var hemkatalogerna är monterade |
+| `DATA_DIR` | `/data` | SQLite-databas + sessionshemlighet + cookies |
+| `PORT` | `8201` | HTTP-port |
+| `HOMES_EXCLUDE` | *(tom)* | Kommaseparerade konton som döljs i profilväljaren (`admin`/`guest` döljs alltid) |
 
-Put site-specific values in a `docker-compose.override.yml` (gitignored).
+Lägg platsspecifika värden i en `docker-compose.override.yml` (gitignorad).
 
-### Synology notes
+### Synology-noter
 
-- The compose file mounts `/volume2/homes` — adjust to your volume.
-- The container must run as **root** (it drops privileges per job); don't add
-  a `user:` directive.
-- For the "copy to MP3 player" button you need HTTPS: add a reverse-proxy
-  rule in DSM (Control Panel → Login Portal → Advanced → Reverse Proxy)
-  from an HTTPS port to `http://localhost:8201`.
+- Compose-filen monterar `/volume2/homes` — anpassa till din volym.
+- Containern måste köra som **root** (den byter användare per jobb); lägg
+  inte till något `user:`-direktiv.
+- För "Kopiera till mp3-spelare"-knappen krävs HTTPS: lägg en omvänd
+  proxy-regel i DSM (Kontrollpanelen → Inloggningsportal → Avancerat →
+  Omvänd proxy) från en HTTPS-port till `http://localhost:8201`.
+  Självsignerat certifikat räcker — exponera ingenting mot internet.
 
-## Notes on private playlists
+## Om privata spellistor
 
-YouTube Music playlists are **private by default**, which the anonymous
-downloader can't read. Set the playlist to **Unlisted** (⋮ → Edit playlist →
-Privacy) — still hidden from search and public profiles, but readable via
-the link. The UI explains this too when it happens. Alternatively, connect
-a YouTube account to the profile (see above) and private playlists work
-as-is.
+YouTube Music-spellistor är **privata som standard**, och sådana kan inte
+läsas anonymt. Två lösningar: sätt listan till **Olistad** (⋮ → Redigera
+spellista → Sekretess — fortfarande dold för alla utan länken), eller koppla
+ett YouTube-konto till profilen. Cookie-exporten görs säkrast från ett
+inkognitofönster som stängs efteråt (tillägget *Get cookies.txt LOCALLY*
+länkas med steg-för-steg-guide direkt i appen).
 
-To export cookies safely: install a cookies.txt extension (e.g. "Get
-cookies.txt LOCALLY"), log in to music.youtube.com **in a private/incognito
-window**, export, then close the window — this keeps the exported session
-from being rotated away by your regular browsing.
+## Juridik
 
-## Legal
-
-This tool is intended for **personal, private use** (in Sweden: private
-copying under 12 § upphovsrättslagen). Downloading from YouTube may violate
-YouTube's Terms of Service and the legal situation differs between
-jurisdictions — you are responsible for how you use this software. Not
-affiliated with YouTube or Shanling.
+Verktyget är avsett för **privat bruk** (i Sverige: privatkopiering enligt
+12 § upphovsrättslagen). Nedladdning från YouTube kan bryta mot YouTubes
+användarvillkor och rättsläget skiljer sig mellan länder — du ansvarar
+själv för hur du använder programvaran. Inte anslutet till YouTube eller
+Shanling.
