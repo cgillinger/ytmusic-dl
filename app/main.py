@@ -8,8 +8,8 @@ from importlib import metadata
 from pathlib import Path
 from shutil import which
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -470,6 +470,124 @@ def playlist_file(playlist_id: int, name: str,
     if not path.is_file() or path.suffix != ".mp3":
         raise HTTPException(404, "Filen finns inte.")
     return FileResponse(path, media_type="audio/mpeg", filename=name)
+
+
+# ---------- bibliotek: metadata, omslag, strömning ----------
+
+_meta_cache: dict = {}
+
+
+def _track_meta(path: Path) -> dict:
+    st = path.stat()
+    key = (str(path), st.st_mtime_ns)
+    if key in _meta_cache:
+        return _meta_cache[key]
+    from mutagen.id3 import ID3
+    from mutagen.mp3 import MP3
+    meta = {"file": path.name, "size": st.st_size, "mtime": int(st.st_mtime),
+            "artist": None, "title": None, "duration": None, "bitrate": None,
+            "has_cover": False}
+    try:
+        mp3 = MP3(path)
+        meta["duration"] = round(mp3.info.length)
+        meta["bitrate"] = round(mp3.info.bitrate / 1000)
+    except Exception:
+        pass
+    try:
+        id3 = ID3(path)
+        meta["artist"] = str(id3.get("TPE1", "")) or None
+        meta["title"] = str(id3.get("TIT2", "")) or None
+        meta["has_cover"] = bool(id3.getall("APIC"))
+    except Exception:
+        pass
+    if len(_meta_cache) > 4000:
+        _meta_cache.clear()
+    _meta_cache[key] = meta
+    return meta
+
+
+def _track_path(profile, playlist_id: int, name: str) -> tuple[Path, dict]:
+    _safe_name(name)
+    with db.connect() as c:
+        pl = _playlist_or_404(c, playlist_id, profile["id"])
+    path = (HOMES_DIR / profile["home"] / "Musik" / "Spelaren"
+            / pl["folder"] / name)
+    if not path.is_file() or path.suffix != ".mp3":
+        raise HTTPException(404, "Filen finns inte.")
+    return path, pl
+
+
+@app.get("/api/playlists/{playlist_id}/tracks")
+def playlist_tracks(playlist_id: int, profile=Depends(require_profile)):
+    with db.connect() as c:
+        pl = _playlist_or_404(c, playlist_id, profile["id"])
+    pdir = (HOMES_DIR / profile["home"] / "Musik" / "Spelaren"
+            / pl["folder"])
+    tracks = []
+    if pdir.is_dir():
+        for f in sorted(pdir.iterdir()):
+            if f.suffix == ".mp3" and not f.name.startswith("."):
+                tracks.append(_track_meta(f))
+    return {"id": pl["id"], "name": pl["name"], "tracks": tracks}
+
+
+@app.get("/api/playlists/{playlist_id}/cover/{name}")
+def track_cover(playlist_id: int, name: str, request: Request,
+                profile=Depends(require_profile)):
+    path, _ = _track_path(profile, playlist_id, name)
+    st = path.stat()
+    etag = f'"{st.st_mtime_ns}-{st.st_size}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
+    from mutagen.id3 import ID3
+    try:
+        apics = ID3(path).getall("APIC")
+    except Exception:
+        apics = []
+    if not apics:
+        raise HTTPException(404, "Inget omslag i filen.")
+    return Response(apics[0].data,
+                    media_type=apics[0].mime or "image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400",
+                             "ETag": etag})
+
+
+@app.get("/api/playlists/{playlist_id}/stream/{name}")
+def stream_track(playlist_id: int, name: str,
+                 range_header: str | None = Header(None, alias="Range"),
+                 profile=Depends(require_profile)):
+    """Range-strömning så att spelaren kan hoppa i låten."""
+    path, _ = _track_path(profile, playlist_id, name)
+    size = path.stat().st_size
+    start, end, status = 0, size - 1, 200
+    if range_header and range_header.startswith("bytes="):
+        try:
+            s, _, e = range_header[6:].partition("-")
+            start = int(s) if s else 0
+            end = min(int(e), size - 1) if e else size - 1
+            if start <= end:
+                status = 206
+            else:
+                start, end = 0, size - 1
+        except ValueError:
+            pass
+
+    def reader(p=str(path), pos=start, left=end - start + 1):
+        with open(p, "rb") as fh:
+            fh.seek(pos)
+            while left > 0:
+                chunk = fh.read(min(65536, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+                yield chunk
+
+    headers = {"Accept-Ranges": "bytes",
+               "Content-Length": str(end - start + 1)}
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(reader(), status_code=status,
+                             media_type="audio/mpeg", headers=headers)
 
 
 # ---------- statiska filer (frontend) ----------

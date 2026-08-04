@@ -175,6 +175,7 @@ async function showMain() {
     avatar(state.profile.name, state.profile.color, true), { id: "who-avatar" }));
   $("shanling-hint").textContent = $("shanling").checked ? HINT_ON : HINT_OFF;
   show("view-main");
+  setTab("fetch");
   $("job-panel").hidden = true;  // visa aldrig en gammal körnings logg
   await refreshPlaylists();
   const active = await api("/api/jobs/active");
@@ -441,6 +442,177 @@ async function syncToPlayer(playlist) {
   }
 }
 
+/* ---------- bibliotek & spelare ---------- */
+
+const lib = { tracks: [], plId: null, plName: "", idx: -1 };
+const audio = $("audio");
+let seekDragging = false;
+
+function setTab(which) {
+  $("tab-fetch").classList.toggle("active", which === "fetch");
+  $("tab-library").classList.toggle("active", which === "library");
+  $("fetch-view").hidden = which !== "fetch";
+  $("library-view").hidden = which !== "library";
+  if (which === "library") loadShelf();
+}
+$("tab-fetch").addEventListener("click", () => setTab("fetch"));
+$("tab-library").addEventListener("click", () => setTab("library"));
+
+function coverUrl(plId, t) {
+  return `/api/playlists/${plId}/cover/${encodeURIComponent(t.file)}`;
+}
+
+async function loadShelf() {
+  $("lib-detail").hidden = true;
+  $("lib-shelf").hidden = false;
+  const shelf = $("lib-shelf");
+  shelf.replaceChildren();
+  let any = false;
+  for (const p of await api("/api/playlists")) {
+    const data = await api(`/api/playlists/${p.id}/tracks`);
+    if (!data.tracks.length) continue;
+    any = true;
+    const covers = data.tracks.filter(t => t.has_cover).slice(0, 4);
+    const collage = el("div",
+      { class: "collage" + (covers.length < 4 ? " single" : "") });
+    if (!covers.length) {
+      collage.append(el("div", { class: "noart" }, "📼"));
+    } else {
+      const use = covers.length >= 4 ? covers : covers.slice(0, 1);
+      for (const t of use) {
+        collage.append(el("img", { loading: "lazy", alt: "",
+          src: coverUrl(p.id, t) }));
+      }
+    }
+    shelf.append(el("button", { class: "shelf-card",
+      onclick: () => openLibPlaylist(p.id) },
+      collage,
+      el("div", { class: "shelf-name" }, p.name),
+      el("div", { class: "shelf-count" }, `${data.tracks.length} låtar`)));
+  }
+  $("lib-empty").hidden = any;
+}
+
+async function openLibPlaylist(plId) {
+  const data = await api(`/api/playlists/${plId}/tracks`);
+  if (lib.plId !== plId) lib.idx = -1;
+  lib.plId = plId;
+  lib.plName = data.name;
+  lib.tracks = data.tracks;
+  $("lib-title").textContent = data.name;
+  $("lib-shelf").hidden = true;
+  $("lib-detail").hidden = false;
+  renderTracks();
+}
+
+function fmtTime(s) {
+  if (s == null || isNaN(s)) return "–:–";
+  s = Math.round(s);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function renderTracks() {
+  const wrap = $("lib-tracks");
+  wrap.replaceChildren();
+  lib.tracks.forEach((t, i) => {
+    wrap.append(el("div",
+      { class: "trackrow" + (i === lib.idx ? " playing" : ""),
+        role: "button", tabindex: "0",
+        onclick: () => playTrack(i),
+        onkeydown: (e) => { if (e.key === "Enter") playTrack(i); } },
+      el("span", { class: "t-no" }, String(i + 1)),
+      t.has_cover
+        ? el("img", { class: "t-cover", loading: "lazy", alt: "",
+            src: coverUrl(lib.plId, t) })
+        : el("span", { class: "t-cover" }),
+      el("span", { class: "t-meta" },
+        el("div", { class: "t-title" },
+          t.title || t.file.replace(/\.mp3$/, "")),
+        el("div", { class: "t-artist" }, t.artist || "")),
+      el("span", { class: "t-len" }, fmtTime(t.duration)),
+      el("button", { class: "t-info", "aria-label": "Fakta om låten",
+        onclick: (e) => { e.stopPropagation(); showFacts(t); } }, "i")));
+  });
+}
+
+function showFacts(t) {
+  const dl = el("dl", {});
+  const add = (k, v) => dl.append(el("dt", {}, k), el("dd", {}, v));
+  add("Artist", t.artist || "Okänd");
+  add("Titel", t.title || t.file.replace(/\.mp3$/, ""));
+  add("Längd", fmtTime(t.duration));
+  if (t.bitrate) add("Ljudkvalitet", `${t.bitrate} kbit/s`);
+  add("Filstorlek", `${(t.size / 1048576).toFixed(1)} MB`);
+  add("Hämtad", new Date(t.mtime * 1000).toLocaleDateString("sv-SE"));
+  add("Fil", t.file);
+  const box = el("div", { class: "factbox" });
+  if (t.has_cover) box.append(el("img", { alt: "", src: coverUrl(lib.plId, t) }));
+  box.append(dl);
+  modal("Om låten", box);
+}
+
+function playTrack(i) {
+  if (i < 0 || i >= lib.tracks.length) return;
+  lib.idx = i;
+  const t = lib.tracks[i];
+  audio.src = `/api/playlists/${lib.plId}/stream/${encodeURIComponent(t.file)}`;
+  audio.play();
+  $("player").hidden = false;
+  document.body.classList.add("has-player");
+  $("player-title").textContent = t.title || t.file.replace(/\.mp3$/, "");
+  $("player-artist").textContent = t.artist || lib.plName;
+  const cov = $("player-cover");
+  if (t.has_cover) { cov.src = coverUrl(lib.plId, t); cov.hidden = false; }
+  else { cov.hidden = true; }
+  renderTracks();
+}
+
+function stopPlayer() {
+  audio.pause();
+  audio.removeAttribute("src");
+  $("player").hidden = true;
+  document.body.classList.remove("has-player");
+  lib.idx = -1;
+}
+
+$("player-play").addEventListener("click",
+  () => audio.paused ? audio.play() : audio.pause());
+$("player-prev").addEventListener("click", () => playTrack(lib.idx - 1));
+$("player-next").addEventListener("click", () => playTrack(lib.idx + 1));
+audio.addEventListener("play", () => {
+  $("player-cassette").classList.add("spinning");
+  $("player-play").textContent = "⏸";
+});
+audio.addEventListener("pause", () => {
+  $("player-cassette").classList.remove("spinning");
+  $("player-play").textContent = "▶";
+});
+audio.addEventListener("ended", () => {
+  if (lib.idx + 1 < lib.tracks.length) playTrack(lib.idx + 1);
+  else {
+    $("player-cassette").classList.remove("spinning");
+    $("player-play").textContent = "▶";
+  }
+});
+audio.addEventListener("timeupdate", () => {
+  if (!audio.duration) return;
+  if (!seekDragging) {
+    $("player-seek").value =
+      Math.round(audio.currentTime / audio.duration * 100);
+  }
+  $("player-time").textContent =
+    `${fmtTime(audio.currentTime)} / ${fmtTime(audio.duration)}`;
+});
+$("player-seek").addEventListener("input", () => { seekDragging = true; });
+$("player-seek").addEventListener("change", () => {
+  if (audio.duration) {
+    audio.currentTime = audio.duration * $("player-seek").value / 100;
+  }
+  seekDragging = false;
+});
+$("lib-back").addEventListener("click", loadShelf);
+$("lib-playall").addEventListener("click", () => playTrack(0));
+
 /* ---------- YouTube-konto (cookies) ---------- */
 
 function renderCookies(st) {
@@ -553,6 +725,7 @@ $("btn-logout").addEventListener("click", async () => {
   clearInterval(state.pollTimer);
   clearInterval(state.watchTimer);
   state.currentJobId = null;
+  stopPlayer();
   boot();
 });
 

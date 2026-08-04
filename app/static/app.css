@@ -406,6 +406,148 @@ input:focus-visible {
 .acct[open] summary { margin-bottom: 10px; }
 .acct .btn input[type="file"] { display: none; }
 
+/* ---------- flikar ---------- */
+
+.tabs {
+  display: flex; gap: 8px;
+  margin: 18px 0 4px;
+}
+.tab {
+  font: inherit; font-family: var(--display);
+  font-weight: 700; font-size: 13px; letter-spacing: .04em;
+  padding: 9px 20px; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: 999px;
+  background: transparent; color: var(--muted);
+}
+.tab.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tab:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
+
+/* ---------- bibliotek: hyllan ---------- */
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+.shelf-card {
+  background: var(--panel);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0; font: inherit; color: var(--ink);
+  text-align: left;
+  transition: border-color .15s, transform .1s;
+}
+.shelf-card:hover { border-color: var(--muted); transform: translateY(-2px); }
+.shelf-card:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
+.collage {
+  display: grid; grid-template-columns: 1fr 1fr;
+  aspect-ratio: 1; background: var(--lcd);
+}
+.collage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.collage.single { grid-template-columns: 1fr; }
+.collage .noart {
+  display: flex; align-items: center; justify-content: center;
+  color: #5A5240; font-size: 30px;
+}
+.shelf-name { font-weight: 700; font-size: 14px; padding: 10px 12px 2px;
+  overflow-wrap: anywhere; }
+.shelf-count { font-family: var(--mono); font-size: 11px; color: var(--muted);
+  padding: 0 12px 12px; }
+
+/* ---------- bibliotek: spårlistan ---------- */
+
+.lib-head {
+  display: flex; align-items: center; gap: 12px;
+  margin: 18px 0 12px; flex-wrap: wrap;
+}
+.lib-head h2 { margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.trackrow {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left; font: inherit; color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 8px 12px; margin: 6px 0;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.trackrow:hover { border-color: var(--muted); }
+.trackrow:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
+.trackrow.playing { border-color: var(--stripe-b); }
+.trackrow.playing .t-no { color: var(--stripe-b); }
+.t-no { font-family: var(--mono); font-size: 12px; color: var(--muted);
+  width: 26px; flex: none; text-align: right; }
+.t-cover { width: 44px; height: 44px; border-radius: 6px; object-fit: cover;
+  flex: none; background: var(--lcd); }
+.t-meta { flex: 1; min-width: 0; }
+.t-title { font-weight: 600; font-size: 14.5px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.t-artist { font-size: 12.5px; color: var(--muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.t-len { font-family: var(--mono); font-size: 12px; color: var(--muted);
+  flex: none; }
+.t-info {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  border: 1.5px solid var(--line); background: transparent;
+  color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
+}
+.t-info:hover { color: var(--ink); border-color: var(--ink); }
+
+/* Faktarutan */
+.factbox { display: flex; gap: 16px; align-items: flex-start; }
+.factbox img { width: 128px; height: 128px; border-radius: 10px;
+  object-fit: cover; flex: none; background: var(--lcd); }
+.factbox dl { margin: 0; font-size: 13.5px; flex: 1; min-width: 0; }
+.factbox dt { color: var(--muted); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; margin-top: 8px; }
+.factbox dt:first-child { margin-top: 0; }
+.factbox dd { margin: 1px 0 0; overflow-wrap: anywhere; }
+
+/* ---------- spelarraden ---------- */
+
+body.has-player main { padding-bottom: 110px; }
+.player {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel-2);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, .4);
+}
+.cassette-mini { width: 40px; height: 26px; color: var(--muted); flex: none; }
+.cassette-mini .reel { transform-box: fill-box; transform-origin: center; }
+.cassette-mini.spinning .reel {
+  animation: reelspin 1.6s linear infinite;
+  color: var(--stripe-b);
+}
+.player-cover { width: 44px; height: 44px; border-radius: 6px;
+  object-fit: cover; flex: none; }
+.player-meta { min-width: 0; width: 200px; flex: 0 1 auto; }
+.player-meta div:first-child { font-weight: 700; font-size: 13.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-meta .muted { font-size: 12px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.pbtn {
+  font: inherit; font-size: 16px; color: var(--ink);
+  background: transparent; border: none; cursor: pointer;
+  padding: 8px; border-radius: 50%; flex: none;
+}
+.pbtn:hover { color: var(--stripe-b); }
+.pbtn:focus-visible { outline: 2px solid var(--stripe-b); }
+.pbtn-main { font-size: 22px; }
+#player-seek { flex: 1; accent-color: var(--rec); min-width: 60px; }
+#player-time { font-size: 11.5px; color: var(--muted); flex: none; }
+
+@media (max-width: 560px) {
+  .player { flex-wrap: wrap; gap: 8px; }
+  .player-meta { width: auto; flex: 1; }
+  #player-seek { order: 5; flex-basis: 100%; }
+  body.has-player main { padding-bottom: 150px; }
+}
+
 /* ---------- sidfot & modal ---------- */
 
 .foot {
