@@ -126,15 +126,30 @@
 
     <details class="panel acct">
       <summary>YouTube-konto <span class="muted">(valfritt)</span></summary>
-      <p class="hint">Vissa låtar och privata spellistor kan bara hämtas med
-      ett inloggat YouTube-konto — och med Premium blir ljudkvaliteten högre.
-      Så här kopplar du kontot: installera tillägget
-      <strong>Get cookies.txt LOCALLY</strong> i Chrome/Edge, öppna ett
-      inkognitofönster och logga in på music.youtube.com, exportera
-      cookies.txt för sidan, stäng inkognitofönstret och ladda upp filen här.</p>
+      <p class="hint">Vissa låtar och privata spellistor går bara att hämta
+      om appen får låna ditt YouTube-konto — och har du Premium blir ljudet
+      dessutom bättre. Kopplingen görs en gång och tar ett par minuter.</p>
+      <ol class="steps">
+        <li>Installera tillägget
+          <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+             target="_blank" rel="noopener">Get cookies.txt LOCALLY</a>
+          i Chrome eller Edge. <span class="muted">Ta exakt det med
+          "LOCALLY" i namnet — det skickar ingenting till internet.</span></li>
+        <li>Skriv <span class="mono">chrome://extensions</span> i adressfältet
+          → klicka på tillägget → slå på
+          <strong>Tillåt i inkognitoläge</strong>.</li>
+        <li>Öppna ett <strong>inkognitofönster</strong> och logga in på
+          <span class="mono">music.youtube.com</span>.</li>
+        <li>Klicka på tilläggets ikon och välj <strong>Export</strong> —
+          filen <span class="mono">cookies.txt</span> hamnar i Hämtningar.</li>
+        <li>Stäng inkognitofönstret helt.</li>
+        <li>Ladda upp filen med knappen här under.
+          <span class="muted">Radera den sedan ur Hämtningar — det är en
+          inloggningsnyckel.</span></li>
+      </ol>
       <p class="hint">Kontot används normalt bara som reserv när en låt inte
-      går att hämta anonymt. Cookies slutar gälla ibland — ladda då bara upp
-      en ny fil.</p>
+      går att hämta anonymt. Slutar kopplingen fungera efter ett tag är det
+      bara att göra om stegen och ladda upp en ny fil.</p>
       <p class="pl-meta" id="cookie-status"></p>
       <div class="row">
         <label class="btn btn-ghost btn-s" for="cookie-file">Ladda upp
