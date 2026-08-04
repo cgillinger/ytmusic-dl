@@ -1,0 +1,15 @@
+services:
+  ytmusic-dl:
+    build: .
+    container_name: ytmusic-dl
+    ports:
+      - "8201:8201"
+    volumes:
+      - /volume2/homes:/homes
+      - ./data:/data
+    environment:
+      - TZ=Europe/Stockholm
+      # Hide extra accounts from the profile picker (admin/guest always hidden).
+      # Put site-specific values in docker-compose.override.yml (not in git):
+      # - HOMES_EXCLUDE=serviceuser1,serviceuser2
+    restart: unless-stopped

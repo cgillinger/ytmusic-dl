@@ -1,0 +1,14 @@
+# Körtidsdata
+data/
+nohup.out
+
+# Lokal utveckling
+.venv/
+__pycache__/
+*.pyc
+.playwright-mcp/
+
+# Internt (hemnätverksdetaljer — ska inte publiceras)
+SPEC.md
+DRIFT.md
+docker-compose.override.yml

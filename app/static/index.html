@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Musik till spelaren</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📼</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <svg class="cassette" viewBox="0 0 44 28" aria-hidden="true">
+      <rect x="1" y="1" width="42" height="26" rx="4" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="14" cy="14" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="30" cy="14" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <line x1="18.5" y1="14" x2="25.5" y2="14" stroke="currentColor" stroke-width="2"/>
+    </svg>
+    <div>
+      <div class="brand-name">Musik till spelaren</div>
+      <div class="brand-sub mono" id="brand-sub"></div>
+    </div>
+  </div>
+  <div class="who" id="who" hidden>
+    <span class="chip"><span class="avatar avatar-s" id="who-avatar"></span><span id="who-name"></span></span>
+    <button class="btn btn-ghost btn-s" id="btn-logout">Byt profil</button>
+  </div>
+</header>
+
+<main id="app">
+
+  <section id="view-loading">
+    <p class="hint center">Startar &hellip;</p>
+  </section>
+
+  <section id="view-profiles" hidden>
+    <h1>Vem är du?</h1>
+    <p class="lede">Välj din profil. Musiken du hämtar hamnar i din egen mapp på Synologyn.</p>
+    <div class="cards" id="profile-cards"></div>
+    <div class="center">
+      <button class="btn btn-ghost" id="btn-new-profile">+ Skapa ny profil</button>
+    </div>
+  </section>
+
+  <section id="view-create" hidden>
+    <h1>Skapa din profil</h1>
+    <p class="lede">Välj ditt konto. Har du inget konto på Synologyn kan
+    Christian skapa ett åt dig.</p>
+    <div class="cards" id="home-cards"></div>
+    <div class="panel">
+      <label for="new-pw">Lösenord <span class="muted">(valfritt)</span></label>
+      <input type="password" id="new-pw" autocomplete="new-password">
+      <p class="hint">Lämna tomt om du inte vill ha lösenord. Utan lösenord kan
+      vem som helst hemma öppna din profil och ladda ner musik till din mapp.</p>
+      <p class="error" id="create-error" hidden></p>
+      <div class="row">
+        <button class="btn btn-rec" id="btn-create">Skapa profil</button>
+        <button class="btn btn-ghost" id="btn-create-cancel">Avbryt</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-main" hidden>
+
+    <div class="panel">
+      <h2>Hämta en spellista</h2>
+      <label for="url">Klistra in länken till spellistan</label>
+      <input id="url" inputmode="url" spellcheck="false"
+             placeholder="https://music.youtube.com/playlist?list=&hellip;">
+      <p class="hint" id="url-info"></p>
+      <label for="plname">Spellistans namn <span class="muted">(blir mappnamnet)</span></label>
+      <input id="plname" maxlength="120">
+      <div class="switchrow">
+        <label class="switch">
+          <input type="checkbox" id="shanling" checked>
+          <span class="slider" aria-hidden="true"></span>
+        </label>
+        <div>
+          <strong>Formatera för mp3-spelaren (Shanling M0s)</strong>
+          <p class="hint" id="shanling-hint"></p>
+        </div>
+      </div>
+      <p class="error" id="form-error" hidden></p>
+      <button class="btn btn-rec btn-big" id="btn-fetch">
+        <span class="recdot" aria-hidden="true"></span>Hämta
+      </button>
+    </div>
+
+    <div class="panel panel-job" id="job-panel" hidden>
+      <div class="deck">
+        <svg class="cassette-big" id="job-cassette" viewBox="0 0 120 74" aria-hidden="true">
+          <rect class="shell" x="2" y="2" width="116" height="70" rx="8"
+                fill="none" stroke-width="3"/>
+          <rect x="20" y="14" width="80" height="30" rx="6"
+                fill="none" stroke="currentColor" stroke-width="2"/>
+          <g class="reel" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="41" cy="29" r="9"/>
+            <line x1="41" y1="21.5" x2="41" y2="36.5"/>
+            <line x1="34.5" y1="25.25" x2="47.5" y2="32.75"/>
+            <line x1="34.5" y1="32.75" x2="47.5" y2="25.25"/>
+          </g>
+          <g class="reel" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="79" cy="29" r="9"/>
+            <line x1="79" y1="21.5" x2="79" y2="36.5"/>
+            <line x1="72.5" y1="25.25" x2="85.5" y2="32.75"/>
+            <line x1="72.5" y1="32.75" x2="85.5" y2="25.25"/>
+          </g>
+          <path d="M 30 72 L 36 54 H 84 L 90 72" fill="none"
+                stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <h2 id="job-title">Hämtar &hellip;</h2>
+      </div>
+      <div class="bar"><div class="bar-fill" id="job-bar"></div></div>
+      <ol class="display" id="job-log"></ol>
+      <p class="summary" id="job-summary" hidden></p>
+    </div>
+
+    <h2 class="sect">Dina spellistor</h2>
+    <div id="playlist-list"></div>
+    <p class="hint" id="playlist-empty" hidden>Inga spellistor än. Klistra in en
+    länk här ovanför så sätter vi igång.</p>
+
+  </section>
+
+</main>
+
+<footer class="foot" id="foot" hidden>
+  <span class="mono" id="meta-line"></span>
+  <button class="linkish" id="btn-update-ytdlp">Uppdatera yt-dlp</button>
+</footer>
+
+<dialog id="modal">
+  <h3 id="modal-title"></h3>
+  <div id="modal-body"></div>
+  <div class="row right">
+    <button class="btn btn-ghost" id="modal-close">Stäng</button>
+  </div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
