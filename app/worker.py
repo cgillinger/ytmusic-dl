@@ -109,6 +109,57 @@ def pick_artist(info) -> str:
     return artist or "Okänd artist"
 
 
+BAD_WORDS = ("live", "cover", "reaction", "remix", "sped", "slowed", "8d",
+             "karaoke", "instrumental", "concert", "session", "acoustic")
+
+
+def is_unavailable(exc) -> bool:
+    msg = str(exc).lower()
+    return ("unavailable" in msg or "not available" in msg
+            or "removed" in msg or "private video" in msg)
+
+
+def rescue_search(artist, title, expected_dur):
+    """Originalet är borttaget — leta upp en annan utgåva av samma låt.
+    Samma sak som YouTube Music-appen gör tyst när den spelar upp."""
+    query = f"{artist} {title}".strip()
+    if not query:
+        return None
+    try:
+        _, results = flat_entries(f"ytsearch6:{query}")
+    except Exception:
+        return None
+    orig_title = (title or "").lower()
+    best, best_score = None, 0
+    for r in results:
+        if not r.get("id"):
+            continue
+        t = (r.get("title") or "").lower()
+        ch = (r.get("channel") or r.get("uploader") or "").lower()
+        dur = r.get("duration")
+        score = 10.0
+        if expected_dur and dur:
+            diff = abs(dur - expected_dur)
+            if diff > max(25, expected_dur * 0.25):
+                continue  # fel längd → annan version (live/förlängd etc.)
+            score -= diff / 3
+        if "official audio" in t:
+            score += 30
+        elif "audio" in t:
+            score += 12
+        if "lyric" in t:
+            score += 8
+        if artist and artist.lower() in ch:
+            score += 20
+        if ch.endswith("- topic"):
+            score += 15
+        if any(w in t and w not in orig_title for w in BAD_WORDS):
+            score -= 40
+        if score > best_score:
+            best, best_score = r, score
+    return best
+
+
 def cleanup_parts(pdir: Path, vid: str):
     for p in pdir.glob(f".part-{vid}*"):
         try:
@@ -245,7 +296,10 @@ def run(job):
     number = next_number(pdir) if shanling else 0
 
     if always:
-        attempts = [(ck, "music.youtube.com"), (ck, "www.youtube.com")]
+        # Sista anonyma försöket är ett skyddsnät: en trasig cookie-session
+        # ska inte stoppa hämtningar som fungerar utan inloggning.
+        attempts = [(ck, "music.youtube.com"), (ck, "www.youtube.com"),
+                    (None, "www.youtube.com")]
     else:
         attempts = [(None, "www.youtube.com")]
         if ck:
@@ -257,6 +311,8 @@ def run(job):
             # maskinjämna hämtmönster som triggar YouTubes bot-kontroll.
             time.sleep(random.uniform(1.0, 5.0))
         vid = entry["id"]
+        dl_id = vid
+        substituted = False
         shown = entry.get("title") or vid
         log(f"Hämtar ({k}/{len(todo)}): {shown}")
         info = None
@@ -270,27 +326,55 @@ def run(job):
                 cleanup_parts(pdir, vid)
                 if i == 0 and ckf is None and len(attempts) > 1:
                     log("Gick inte anonymt — provar med ditt YouTube-konto …")
+
+        if info is None and is_unavailable(last_exc):
+            sub_artist = re.sub(r"\s*-\s*Topic$", "",
+                                entry.get("uploader")
+                                or entry.get("channel") or "")
+            sub = rescue_search(sub_artist, entry.get("title") or "",
+                                entry.get("duration"))
+            if sub:
+                log("Originalet verkar borttaget från YouTube — provar en "
+                    f"annan utgåva: {sub.get('title')} "
+                    f"({sub.get('channel') or sub.get('uploader')})")
+                for ckf, host in attempts:
+                    try:
+                        info = download_one(sub["id"], pdir, ckf, host)
+                        dl_id = sub["id"]
+                        substituted = True
+                        break
+                    except Exception as exc:
+                        last_exc = exc
+                        cleanup_parts(pdir, sub["id"])
+
         if info is None:
             log(f"Kunde inte hämta: {shown} — {short_error(last_exc)}", "warn")
             failed += 1
             continue
 
-        tmp = pdir / f".part-{vid}.mp3"
+        tmp = pdir / f".part-{dl_id}.mp3"
         if not tmp.exists():
             log(f"Kunde inte hämta: {shown} — ingen MP3 skapades.", "warn")
             failed += 1
-            cleanup_parts(pdir, vid)
+            cleanup_parts(pdir, dl_id)
             continue
 
-        raw_artist = pick_artist(info)
-        track_name = info.get("track")
-        retag = track_name is None
-        if not track_name:
-            track_name = info.get("title") or vid
-            # Vanliga YouTube-titlar är "Artist - Titel" — undvik dubblering.
-            prefix = f"{raw_artist} - ".lower()
-            if raw_artist and track_name.lower().startswith(prefix):
-                track_name = track_name[len(prefix):]
+        if substituted:
+            # Ersättningsutgåva: originalpostens rena namn, inte
+            # YouTube-titeln med "(Official Audio)"-svansar.
+            raw_artist = sub_artist or pick_artist(info)
+            track_name = entry.get("title") or info.get("title") or dl_id
+            retag = True
+        else:
+            raw_artist = pick_artist(info)
+            track_name = info.get("track")
+            retag = track_name is None
+            if not track_name:
+                track_name = info.get("title") or vid
+                # Vanliga YouTube-titlar är "Artist - Titel" — undvik dubblering.
+                prefix = f"{raw_artist} - ".lower()
+                if raw_artist and track_name.lower().startswith(prefix):
+                    track_name = track_name[len(prefix):]
         artist = sanitize(raw_artist, 60)
         track = sanitize(track_name, 80)
         if shanling:
@@ -300,7 +384,7 @@ def run(job):
         else:
             final = unique_path(pdir, sanitize(f"{artist} - {track}", 120))
         tmp.rename(final)
-        cleanup_parts(pdir, vid)
+        cleanup_parts(pdir, dl_id)
         if retag:
             # Videon saknade riktiga låt-taggar — sätt samma artist/titel
             # i ID3 som i filnamnet (annars visar spelaren råtiteln).

@@ -167,7 +167,8 @@ def state(request: Request):
 @app.post("/api/update-ytdlp")
 def update_ytdlp(profile=Depends(require_profile)):
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "--upgrade", "yt-dlp"],
+        [sys.executable, "-m", "pip", "install", "-q", "--upgrade",
+         "yt-dlp[default]"],
         capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         raise HTTPException(502, "Uppdateringen misslyckades — är NAS:en online?")

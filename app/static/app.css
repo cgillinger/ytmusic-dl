@@ -376,6 +376,7 @@ input:focus-visible {
 .copybtn.copied { color: var(--ok); border-color: var(--ok); }
 .copybtn:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 1px; }
 .acct summary:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
+.acct summary .linked { color: var(--ok); font-weight: 600; }
 .acct[open] summary { margin-bottom: 10px; }
 .acct .btn input[type="file"] { display: none; }
 

@@ -392,6 +392,17 @@ function renderCookies(st) {
   $("cookie-remove").hidden = !st.uploaded;
   $("cookie-mode-row").hidden = !st.uploaded;
   $("cookie-always").checked = st.mode === "always";
+  // Status även i den stängda sektionsrubriken
+  const note = $("acct-summary-note");
+  if (st.uploaded) {
+    note.textContent = st.mode === "always"
+      ? "✓ YouTube-konto kopplat — används för alla hämtningar"
+      : "✓ YouTube-konto kopplat — används som reserv";
+    note.classList.add("linked");
+  } else {
+    note.textContent = "(valfritt)";
+    note.classList.remove("linked");
+  }
 }
 
 $("cookie-file").addEventListener("change", async () => {
