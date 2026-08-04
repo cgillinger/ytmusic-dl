@@ -477,7 +477,11 @@ input:focus-visible {
 .trackrow:hover { border-color: var(--muted); }
 .trackrow:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
 .trackrow.playing { border-color: var(--stripe-b); }
-.trackrow.playing .t-no { color: var(--stripe-b); }
+.trackrow.playing .t-no {
+  color: var(--stripe-b);
+  animation: ledpulse 1.2s ease-in-out infinite;
+}
+body.audio-paused .trackrow.playing .t-no { animation: none; }
 .t-no { font-family: var(--mono); font-size: 12px; color: var(--muted);
   width: 26px; flex: none; text-align: right; }
 .t-cover { width: 44px; height: 44px; border-radius: 6px; object-fit: cover;
@@ -524,8 +528,9 @@ body.has-player main { padding-bottom: 110px; }
   color: var(--stripe-b);
 }
 .player-cover { width: 44px; height: 44px; border-radius: 6px;
-  object-fit: cover; flex: none; }
-.player-meta { min-width: 0; width: 200px; flex: 0 1 auto; }
+  object-fit: cover; flex: none; cursor: pointer; }
+.player-meta { min-width: 0; width: 200px; flex: 0 1 auto; cursor: pointer; }
+.player-meta:hover div:first-child { color: var(--stripe-b); }
 .player-meta div:first-child { font-weight: 700; font-size: 13.5px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-meta .muted { font-size: 12px; white-space: nowrap; overflow: hidden;

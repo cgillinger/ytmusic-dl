@@ -592,5 +592,15 @@ def stream_track(playlist_id: int, name: str,
 
 # ---------- statiska filer (frontend) ----------
 
+@app.middleware("http")
+async def no_stale_app_files(request: Request, call_next):
+    """Appfilerna är små — tvinga revalidering så att en deploy aldrig
+    lämnar webbläsare med halvgamla versioner (etag gör det billigt)."""
+    response = await call_next(request)
+    if request.url.path in ("/", "/index.html", "/app.js", "/app.css"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static",
                            html=True), name="static")

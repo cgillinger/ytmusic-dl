@@ -182,6 +182,7 @@ async function showMain() {
   if (active.job_id) pollJob(active.job_id);
   startJobWatcher();
   refreshMeta();
+  restoreNowPlaying();
 }
 
 /* Håller loggpanelen synkad med det jobb som faktiskt kör — även om det
@@ -520,7 +521,7 @@ function renderTracks() {
         role: "button", tabindex: "0",
         onclick: () => playTrack(i),
         onkeydown: (e) => { if (e.key === "Enter") playTrack(i); } },
-      el("span", { class: "t-no" }, String(i + 1)),
+      el("span", { class: "t-no" }, i === lib.idx ? "▶" : String(i + 1)),
       t.has_cover
         ? el("img", { class: "t-cover", loading: "lazy", alt: "",
             src: coverUrl(lib.plId, t) })
@@ -551,12 +552,7 @@ function showFacts(t) {
   modal("Om låten", box);
 }
 
-function playTrack(i) {
-  if (i < 0 || i >= lib.tracks.length) return;
-  lib.idx = i;
-  const t = lib.tracks[i];
-  audio.src = `/api/playlists/${lib.plId}/stream/${encodeURIComponent(t.file)}`;
-  audio.play();
+function setPlayerBar(t) {
   $("player").hidden = false;
   document.body.classList.add("has-player");
   $("player-title").textContent = t.title || t.file.replace(/\.mp3$/, "");
@@ -564,8 +560,67 @@ function playTrack(i) {
   const cov = $("player-cover");
   if (t.has_cover) { cov.src = coverUrl(lib.plId, t); cov.hidden = false; }
   else { cov.hidden = true; }
+}
+
+function playTrack(i) {
+  if (i < 0 || i >= lib.tracks.length) return;
+  lib.idx = i;
+  const t = lib.tracks[i];
+  audio.src = `/api/playlists/${lib.plId}/stream/${encodeURIComponent(t.file)}`;
+  audio.play();
+  setPlayerBar(t);
   renderTracks();
 }
+
+function npKey() { return `ymdl-np-${state.profile?.id}`; }
+
+function saveNowPlaying() {
+  if (lib.plId == null || lib.idx < 0 || !state.profile) return;
+  localStorage.setItem(npKey(), JSON.stringify({
+    plId: lib.plId, file: lib.tracks[lib.idx].file,
+    pos: audio.currentTime }));
+}
+
+/* Efter sidladdning: ladda senaste låten pausad i spelarraden,
+   så kontrollerna finns kvar utan att leta i biblioteket. */
+async function restoreNowPlaying() {
+  const raw = localStorage.getItem(npKey());
+  if (!raw) return;
+  try {
+    const np = JSON.parse(raw);
+    const data = await api(`/api/playlists/${np.plId}/tracks`);
+    const idx = data.tracks.findIndex(t => t.file === np.file);
+    if (idx < 0) return;
+    lib.plId = np.plId;
+    lib.plName = data.name;
+    lib.tracks = data.tracks;
+    lib.idx = idx;
+    const t = data.tracks[idx];
+    audio.src = `/api/playlists/${lib.plId}/stream/` +
+      encodeURIComponent(t.file);
+    audio.addEventListener("loadedmetadata", () => {
+      if (np.pos && np.pos < (audio.duration || 0) - 2) {
+        audio.currentTime = np.pos;
+      }
+    }, { once: true });
+    setPlayerBar(t);
+    $("player-time").textContent =
+      `${fmtTime(np.pos || 0)} / ${fmtTime(t.duration)}`;
+  } catch {
+    localStorage.removeItem(npKey());
+  }
+}
+
+/* Klick på låten i spelarraden → hoppa till rätt spellista i biblioteket */
+async function jumpToPlaying() {
+  if (lib.plId == null) return;
+  setTab("library");
+  await openLibPlaylist(lib.plId);
+  const row = document.querySelector(".trackrow.playing");
+  if (row) row.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+$("player-cover").addEventListener("click", jumpToPlaying);
+document.querySelector(".player-meta").addEventListener("click", jumpToPlaying);
 
 function stopPlayer() {
   audio.pause();
@@ -582,10 +637,13 @@ $("player-next").addEventListener("click", () => playTrack(lib.idx + 1));
 audio.addEventListener("play", () => {
   $("player-cassette").classList.add("spinning");
   $("player-play").textContent = "⏸";
+  document.body.classList.remove("audio-paused");
 });
 audio.addEventListener("pause", () => {
   $("player-cassette").classList.remove("spinning");
   $("player-play").textContent = "▶";
+  document.body.classList.add("audio-paused");
+  saveNowPlaying();
 });
 audio.addEventListener("ended", () => {
   if (lib.idx + 1 < lib.tracks.length) playTrack(lib.idx + 1);
@@ -594,6 +652,7 @@ audio.addEventListener("ended", () => {
     $("player-play").textContent = "▶";
   }
 });
+let lastSave = 0;
 audio.addEventListener("timeupdate", () => {
   if (!audio.duration) return;
   if (!seekDragging) {
@@ -602,6 +661,10 @@ audio.addEventListener("timeupdate", () => {
   }
   $("player-time").textContent =
     `${fmtTime(audio.currentTime)} / ${fmtTime(audio.duration)}`;
+  if (Date.now() - lastSave > 3000) {
+    lastSave = Date.now();
+    saveNowPlaying();
+  }
 });
 $("player-seek").addEventListener("input", () => { seekDragging = true; });
 $("player-seek").addEventListener("change", () => {
