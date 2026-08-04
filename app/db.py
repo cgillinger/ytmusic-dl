@@ -62,8 +62,16 @@ def init() -> None:
         if "cookie_mode" not in cols:
             c.execute("ALTER TABLE profiles ADD COLUMN cookie_mode TEXT "
                       "NOT NULL DEFAULT 'fallback'")
-        # Jobb som var igång vid en omstart kan inte återupptas.
-        c.execute(
-            "UPDATE jobs SET status='error', finished=datetime('now') "
-            "WHERE status IN ('queued','running')"
-        )
+        # Jobb som var igång vid en omstart kan inte återupptas — men
+        # förklara varför i loggen, annars ser det ut som ett gåtfullt fel.
+        orphans = c.execute("SELECT id FROM jobs "
+                            "WHERE status IN ('queued','running')").fetchall()
+        for o in orphans:
+            c.execute("UPDATE jobs SET status='error', "
+                      "finished=datetime('now') WHERE id=?", (o["id"],))
+            c.execute(
+                "INSERT INTO job_log (job_id, level, msg) VALUES (?,?,?)",
+                (o["id"], "warn",
+                 "Hämtningen avbröts av att tjänsten startades om. Klicka "
+                 "'Hämta nya låtar' så fortsätter den där den slutade — "
+                 "det som redan hämtats hämtas inte om."))

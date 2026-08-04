@@ -327,13 +327,17 @@ function pollJob(jobId) {
     catch { return; }
     if (job.playlist) $("job-title").textContent = "Hämtar: " + job.playlist.name;
     const logEl = $("job-log");
+    // Autoscrolla bara om användaren redan är vid slutet — den som
+    // scrollat upp för att läsa ska inte ryckas ner igen.
+    const nearBottom =
+      logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 60;
     for (const line of job.log) {
       state.lastLogId = line.id;
       const cls = line.level === "info" && /^Klar:/.test(line.msg) ? "ok" : line.level;
       logEl.append(el("li", { class: cls },
         el("span", { class: "led" }), el("span", {}, line.msg)));
     }
-    if (job.log.length) logEl.scrollTop = logEl.scrollHeight;
+    if (job.log.length && nearBottom) logEl.scrollTop = logEl.scrollHeight;
     $("job-bar").style.width = (job.progress ?? 0) + "%";
 
     if (job.status === "done" || job.status === "error") {
