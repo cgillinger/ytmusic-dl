@@ -361,6 +361,20 @@ input:focus-visible {
 .steps li::marker { font-family: var(--mono); font-weight: 700; color: var(--stripe-b); }
 .steps a { color: var(--stripe-b); font-weight: 700; }
 .steps .mono { font-size: 13px; }
+
+.copybtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: middle;
+  width: 24px; height: 24px; margin: 0 2px;
+  padding: 0;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--muted);
+  font-size: 13px; line-height: 1;
+  cursor: pointer;
+}
+.copybtn:hover { color: var(--ink); border-color: var(--muted); }
+.copybtn.copied { color: var(--ok); border-color: var(--ok); }
+.copybtn:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 1px; }
 .acct summary:focus-visible { outline: 2px solid var(--stripe-b); outline-offset: 2px; }
 .acct[open] summary { margin-bottom: 10px; }
 .acct .btn input[type="file"] { display: none; }

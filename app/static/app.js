@@ -418,6 +418,43 @@ $("cookie-always").addEventListener("change", async () => {
     body: { mode: $("cookie-always").checked ? "always" : "fallback" } }));
 });
 
+/* ---------- kopiera text-knappar ---------- */
+
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // Clipboard-API:t kräver https — fallback för vanlig LAN-http.
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.append(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".copybtn");
+  if (!btn) return;
+  if (await copyText(btn.dataset.copy)) {
+    const original = btn.innerHTML;
+    btn.classList.add("copied");
+    btn.textContent = "✓";
+    setTimeout(() => {
+      btn.classList.remove("copied");
+      btn.innerHTML = original;
+    }, 1500);
+  }
+});
+
 /* ---------- sidfot ---------- */
 
 async function refreshMeta() {
