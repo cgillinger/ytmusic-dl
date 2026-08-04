@@ -114,9 +114,15 @@ BAD_WORDS = ("live", "cover", "reaction", "remix", "sped", "slowed", "8d",
 
 
 def is_unavailable(exc) -> bool:
+    """Sant endast för borttagna/otillgängliga videor — INTE för formatfel
+    ("Requested format is not available"), som annars falsktriggar
+    ersättningssökningen."""
     msg = str(exc).lower()
-    return ("unavailable" in msg or "not available" in msg
-            or "removed" in msg or "private video" in msg)
+    if "format is not available" in msg:
+        return False
+    return ("video unavailable" in msg or "not available" in msg
+            or "no longer available" in msg or "has been removed" in msg
+            or "private video" in msg)
 
 
 def rescue_search(artist, title, expected_dur):
