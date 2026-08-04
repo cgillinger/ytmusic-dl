@@ -202,21 +202,34 @@ $("shanling").addEventListener("change", () => {
   $("shanling-hint").textContent = $("shanling").checked ? HINT_ON : HINT_OFF;
 });
 
+function setProbe(status, text) {
+  const el = $("url-info");
+  if (!status) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = "probe " + status;
+  el.replaceChildren(el2("span", "led"), text);
+}
+
+function el2(tag, cls) {
+  const n = document.createElement(tag);
+  n.className = cls;
+  return n;
+}
+
 let probeTimer = null;
 $("url").addEventListener("input", () => {
   clearTimeout(probeTimer);
   const url = $("url").value.trim();
-  $("url-info").textContent = "";
+  setProbe(null);
   if (!/^https?:\/\//i.test(url)) return;
-  $("url-info").textContent = "Läser spellistan …";
+  setProbe("loading", "Läser spellistan …");
   probeTimer = setTimeout(async () => {
     try {
       const info = await api("/api/playlist-info?url=" + encodeURIComponent(url));
-      $("url-info").textContent =
-        `Hittade: ${info.title} (${info.count} låtar)`;
+      setProbe("ok", `Hittade: ${info.title} (${info.count} låtar)`);
       if (!$("plname").value.trim()) $("plname").value = info.title;
     } catch (ex) {
-      $("url-info").textContent = ex.message;
+      setProbe("error", ex.message);
     }
   }, 600);
 });
@@ -232,7 +245,7 @@ $("btn-fetch").addEventListener("click", async () => {
   try {
     const res = await api("/api/playlists", { method: "POST",
       body: { url, name, shanling: $("shanling").checked } });
-    $("url").value = ""; $("plname").value = ""; $("url-info").textContent = "";
+    $("url").value = ""; $("plname").value = ""; setProbe(null);
     await refreshPlaylists();
     pollJob(res.job_id);
   } catch (ex) {
