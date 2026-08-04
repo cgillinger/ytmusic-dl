@@ -12,7 +12,8 @@ const HINT_OFF = "Filerna får bara namnet Artist – Titel. Ingen numrering och
 const SMB_HINT = "Du hittar musiken via Utforskaren/Finder: \\\\SERVERN\\home\\" +
   "Musik\\Spelaren — kopiera hela mappen till minneskortets rot.";
 
-let state = { profile: null, playlists: [], pollTimer: null, lastLogId: 0 };
+let state = { profile: null, playlists: [], pollTimer: null,
+  watchTimer: null, currentJobId: null, lastLogId: 0 };
 
 async function api(path, opts = {}) {
   if (opts.body !== undefined) {
@@ -174,10 +175,27 @@ async function showMain() {
     avatar(state.profile.name, state.profile.color, true), { id: "who-avatar" }));
   $("shanling-hint").textContent = $("shanling").checked ? HINT_ON : HINT_OFF;
   show("view-main");
+  $("job-panel").hidden = true;  // visa aldrig en gammal körnings logg
   await refreshPlaylists();
   const active = await api("/api/jobs/active");
   if (active.job_id) pollJob(active.job_id);
+  startJobWatcher();
   refreshMeta();
+}
+
+/* Håller loggpanelen synkad med det jobb som faktiskt kör — även om det
+   startats i en annan flik eller innan sidan laddades om. */
+function startJobWatcher() {
+  clearInterval(state.watchTimer);
+  state.watchTimer = setInterval(async () => {
+    try {
+      const active = await api("/api/jobs/active");
+      if (active.job_id && active.job_id !== state.currentJobId) {
+        pollJob(active.job_id);
+        refreshPlaylists();
+      }
+    } catch {}
+  }, 5000);
 }
 
 $("shanling").addEventListener("change", () => {
@@ -281,6 +299,7 @@ async function refreshPlaylists() {
 
 function pollJob(jobId) {
   clearInterval(state.pollTimer);
+  state.currentJobId = jobId;
   state.lastLogId = 0;
   $("job-panel").hidden = false;
   $("job-summary").hidden = true;
@@ -493,6 +512,8 @@ $("btn-update-ytdlp").addEventListener("click", async () => {
 $("btn-logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" });
   clearInterval(state.pollTimer);
+  clearInterval(state.watchTimer);
+  state.currentJobId = null;
   boot();
 });
 

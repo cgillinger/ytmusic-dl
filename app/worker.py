@@ -166,6 +166,70 @@ def rescue_search(artist, title, expected_dur):
     return best
 
 
+def fetch_original_cover(entry, dest_dir: Path):
+    """Originalpostens omslag (kvadratisk albumkonst hos YT Music) — finns
+    ofta kvar på bildservern även när själva videon är borttagen."""
+    import urllib.request
+    urls = []
+    thumbs = sorted(entry.get("thumbnails") or [],
+                    key=lambda t: t.get("width") or 0, reverse=True)
+    for t in thumbs:
+        u = t.get("url")
+        if not u:
+            continue
+        if "googleusercontent" in u:
+            # YT Musics albumkonst-URL:er bär storleken som suffix —
+            # skriv upp till spelarvänlig storlek.
+            u = re.sub(r"=w\d+-h\d+.*$", "=w544-h544-l90-rj", u)
+        urls.append(u)
+    vid = entry.get("id")
+    if vid:
+        urls += [f"https://i.ytimg.com/vi/{vid}/maxresdefault.jpg",
+                 f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"]
+    fallback = None
+    for url in urls[:6]:
+        try:
+            req = urllib.request.Request(url,
+                                         headers={"User-Agent": "Mozilla/5.0"})
+            data = urllib.request.urlopen(req, timeout=15).read()
+        except Exception:
+            continue
+        if len(data) >= 10000:  # småbilder (60 px) är bara ett par KB
+            raw = dest_dir / ".cover-raw"
+            raw.write_bytes(data)
+            return raw
+        if len(data) > 2000 and fallback is None:
+            fallback = data
+    if fallback:
+        raw = dest_dir / ".cover-raw"
+        raw.write_bytes(fallback)
+        return raw
+    return None
+
+
+def replace_cover(mp3_path: Path, raw_path: Path) -> bool:
+    import subprocess
+    jpg = raw_path.with_suffix(".jpg")
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-v", "quiet", "-i", str(raw_path),
+         "-vf", "crop='min(iw,ih)':'min(iw,ih)'", "-frames:v", "1", str(jpg)])
+    raw_path.unlink(missing_ok=True)
+    if result.returncode != 0 or not jpg.exists():
+        return False
+    try:
+        from mutagen.id3 import APIC, ID3
+        id3 = ID3(mp3_path)
+        id3.delall("APIC")
+        id3.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover",
+                     data=jpg.read_bytes()))
+        id3.save(mp3_path)
+        return True
+    except Exception:
+        return False
+    finally:
+        jpg.unlink(missing_ok=True)
+
+
 def cleanup_parts(pdir: Path, vid: str):
     for p in pdir.glob(f".part-{vid}*"):
         try:
@@ -402,6 +466,12 @@ def run(job):
                 id3.save(final)
             except Exception:
                 pass
+        if substituted:
+            # Ersättarens omslag är ofta en videoruta — byt till
+            # originalspårets albumkonst om den går att hämta.
+            raw = fetch_original_cover(entry, pdir)
+            if raw and replace_cover(final, raw):
+                log("Omslag hämtat från originalspåret.")
         # Arkivet uppdateras endast för fullständigt klara låtar.
         with archive_path.open("a", encoding="utf-8") as fh:
             fh.write(f"youtube {vid}\n")
