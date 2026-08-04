@@ -248,8 +248,7 @@ $("btn-fetch").addEventListener("click", async () => {
     const res = await api("/api/playlists", { method: "POST",
       body: { url, name, shanling: $("shanling").checked } });
     $("url").value = ""; $("plname").value = ""; setProbe(null);
-    await refreshPlaylists();
-    pollJob(res.job_id);
+    await afterJobStart(res.job_id);
   } catch (ex) {
     err.textContent = ex.message;
     err.hidden = false;
@@ -263,25 +262,43 @@ async function refreshPlaylists() {
   const wrap = $("playlist-list");
   wrap.replaceChildren();
   $("playlist-empty").hidden = state.playlists.length > 0;
+  const runningName = state.playlists
+    .find(p => p.active_job?.status === "running")?.name;
   for (const p of state.playlists) {
     let meta = "Inget hämtat än";
-    if (p.active_job) meta = "Hämtning pågår …";
-    else if (p.last_job) {
+    let metaClass = "pl-meta";
+    if (p.active_job?.status === "running") {
+      meta = "● Hämtar nu — följ loggen här ovanför";
+      metaClass = "pl-meta running";
+    } else if (p.active_job?.status === "queued") {
+      meta = runningName
+        ? `I kö — startar när "${runningName}" är klar`
+        : "I kö — startar strax";
+      metaClass = "pl-meta queued";
+    } else if (p.last_job) {
       const j = p.last_job;
       meta = j.status === "error"
         ? "Senaste hämtningen misslyckades"
-        : `Senast: ${j.new ?? 0} nya · ${j.skipped ?? 0} fanns redan` +
-          (j.failed ? ` · ${j.failed} fel` : "");
+        : j.status === "cancelled"
+          ? "Senaste hämtningen avbröts"
+          : `Senast: ${j.new ?? 0} nya · ${j.skipped ?? 0} fanns redan` +
+            (j.failed ? ` · ${j.failed} fel` : "");
     }
     const actions = [
       el("button", { class: "btn btn-dark btn-s",
         ...(p.active_job ? { disabled: "" } : {}),
-        onclick: async () => {
+        onclick: async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          btn.textContent = "Startar …";
           try {
-            const res = await api(`/api/playlists/${p.id}/fetch`, { method: "POST" });
-            await refreshPlaylists();
-            pollJob(res.job_id);
-          } catch (ex) { modal("Hoppsan", el("p", {}, ex.message)); }
+            const res = await api(`/api/playlists/${p.id}/fetch`,
+              { method: "POST" });
+            await afterJobStart(res.job_id);
+          } catch (ex) {
+            modal("Hoppsan", el("p", {}, ex.message));
+            refreshPlaylists();
+          }
         } }, "Hämta nya låtar"),
     ];
     if (p.shanling) {
@@ -305,12 +322,35 @@ async function refreshPlaylists() {
       el("div", { class: "pl-body" },
         el("div", { class: "pl-name" }, p.name,
           ...(p.shanling ? [el("span", { class: "tag" }, "MP3-SPELARE")] : [])),
-        el("div", { class: "pl-meta" }, meta),
+        el("div", { class: metaClass }, meta),
         el("div", { class: "pl-actions" }, ...actions))));
   }
 }
 
 /* ---------- jobb & logg ---------- */
+
+/* Efter jobbstart: scrolla ner till loggen om jobbet kör direkt, eller
+   förklara kön om en annan hämtning är igång. */
+async function afterJobStart(jobId) {
+  await refreshPlaylists();
+  let job = null;
+  try { job = await api(`/api/jobs/${jobId}`); } catch {}
+  if (job && job.status === "queued") {
+    const runningName = state.playlists
+      .find(p => p.active_job?.status === "running")?.name;
+    modal("Ställd i kö",
+      el("p", {}, "Bara en spellista hämtas åt gången (snällt mot både " +
+        "NAS:en och YouTube)."),
+      el("p", {}, runningName
+        ? `Just nu hämtas "${runningName}". Den här spellistan startar ` +
+          "automatiskt direkt efteråt — du behöver inte göra något."
+        : "En annan hämtning pågår. Den här spellistan startar automatiskt " +
+          "direkt efteråt."));
+    return;
+  }
+  pollJob(jobId);
+  $("job-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function pollJob(jobId) {
   clearInterval(state.pollTimer);
@@ -334,7 +374,11 @@ function pollJob(jobId) {
     let job;
     try { job = await api(`/api/jobs/${jobId}?after=${state.lastLogId}`); }
     catch { return; }
-    if (job.playlist) $("job-title").textContent = "Hämtar: " + job.playlist.name;
+    if (job.playlist) {
+      $("job-title").textContent =
+        (job.status === "queued" ? "I kö: " : "Hämtar: ") + job.playlist.name;
+    }
+    $("job-cassette").classList.toggle("spinning", job.status === "running");
     const logEl = $("job-log");
     // Autoscrolla bara om användaren redan är vid slutet — den som
     // scrollat upp för att läsa ska inte ryckas ner igen.

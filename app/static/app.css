@@ -310,6 +310,11 @@ input:focus-visible {
   font-family: var(--mono); font-size: 12px; color: var(--muted);
   margin-top: 5px; overflow-wrap: anywhere;
 }
+.pl-meta.running {
+  color: var(--stripe-b); font-weight: 700;
+  animation: ledpulse 1.4s ease-in-out infinite;
+}
+.pl-meta.queued { color: var(--warn); font-weight: 700; }
 .pl-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
 
 /* ---------- jobbpanelen: däcket ---------- */

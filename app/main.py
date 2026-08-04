@@ -295,7 +295,8 @@ def _start_job(playlist_id: int, profile_id: int) -> int:
             "SELECT 1 FROM jobs WHERE playlist_id=? AND status IN "
             "('queued','running')", (playlist_id,)).fetchone()
         if busy:
-            raise HTTPException(409, "En hämtning pågår redan för spellistan.")
+            raise HTTPException(
+                409, "Den här spellistan hämtas eller väntar redan i kön.")
         cur = c.execute(
             "INSERT INTO jobs (playlist_id, profile_id) VALUES (?,?)",
             (playlist_id, profile_id))
@@ -309,8 +310,9 @@ def playlists(profile=Depends(require_profile)):
     with db.connect() as c:
         rows = c.execute(
             "SELECT p.*, "
-            " (SELECT id FROM jobs j WHERE j.playlist_id=p.id AND j.status IN "
-            "  ('queued','running') ORDER BY j.id DESC LIMIT 1) AS active_job, "
+            " (SELECT json_object('id', j.id, 'status', j.status) FROM jobs j "
+            "  WHERE j.playlist_id=p.id AND j.status IN ('queued','running') "
+            "  ORDER BY j.id DESC LIMIT 1) AS active_job, "
             " (SELECT json_object('status', status, 'new', new, 'skipped', "
             "   skipped, 'failed', failed, 'finished', finished) FROM jobs j "
             "  WHERE j.playlist_id=p.id AND j.status IN "
@@ -322,6 +324,8 @@ def playlists(profile=Depends(require_profile)):
     for r in rows:
         d = dict(r)
         d["last_job"] = json.loads(d["last_job"]) if d["last_job"] else None
+        d["active_job"] = (json.loads(d["active_job"])
+                           if d["active_job"] else None)
         out.append(d)
     return out
 
@@ -406,9 +410,13 @@ def cancel_job(job_id: int, profile=Depends(require_profile)):
 @app.get("/api/jobs/active")
 def active_job(profile=Depends(require_profile)):
     with db.connect() as c:
+        # Pågående jobb före köade — annars fastnar loggpanelen på ett
+        # köat jobb medan ett annat faktiskt kör.
         row = c.execute(
             "SELECT id FROM jobs WHERE profile_id=? AND status IN "
-            "('queued','running') ORDER BY id DESC LIMIT 1",
+            "('queued','running') "
+            "ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, id "
+            "LIMIT 1",
             (profile["id"],)).fetchone()
     return {"job_id": row["id"] if row else None}
 
