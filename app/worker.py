@@ -153,10 +153,14 @@ def rescue_search(artist, title, expected_dur):
             score += 30
         elif "audio" in t:
             score += 12
+        if "official" in t or "oficial" in t:
+            score += 15
         if "lyric" in t:
             score += 8
         if artist and artist.lower() in ch:
             score += 20
+        if artist and artist.lower() in t:
+            score += 8
         if ch.endswith("- topic"):
             score += 15
         if any(w in t and w not in orig_title for w in BAD_WORDS):
@@ -204,6 +208,66 @@ def fetch_original_cover(entry, dest_dir: Path):
         raw = dest_dir / ".cover-raw"
         raw.write_bytes(fallback)
         return raw
+    return None
+
+
+def entry_square_art(entry, dest_dir: Path):
+    """Postens egen kvadratiska albumkonst (lh3) — finns i vissa
+    spellisttyper och är då facit."""
+    import urllib.request
+    for t in entry.get("thumbnails") or []:
+        url = t.get("url") or ""
+        if "googleusercontent" not in url:
+            continue
+        url = re.sub(r"=w\d+-h\d+.*$", "=w544-h544-l90-rj", url)
+        try:
+            req = urllib.request.Request(url,
+                                         headers={"User-Agent": "Mozilla/5.0"})
+            data = urllib.request.urlopen(req, timeout=15).read()
+            if len(data) > 5000:
+                raw = dest_dir / ".cover-raw"
+                raw.write_bytes(data)
+                return raw
+        except Exception:
+            pass
+    return None
+
+
+def itunes_cover(artist, track, duration, dest_dir: Path):
+    """Kanonisk albumkonst via iTunes Search API (gratis, nyckellöst).
+    Speltiden måste matcha — skyddar mot remixer/covers med samma namn."""
+    import json as jsonlib
+    import urllib.parse
+    import urllib.request
+    query = urllib.parse.urlencode({"term": f"{artist} {track}".strip(),
+                                    "media": "music", "entity": "song",
+                                    "limit": 5})
+    try:
+        req = urllib.request.Request(
+            f"https://itunes.apple.com/search?{query}",
+            headers={"User-Agent": "Mozilla/5.0"})
+        results = jsonlib.loads(
+            urllib.request.urlopen(req, timeout=15).read()).get("results", [])
+    except Exception:
+        return None
+    for r in results:
+        secs = (r.get("trackTimeMillis") or 0) / 1000
+        if duration and abs(secs - duration) > 7:
+            continue
+        art = (r.get("artworkUrl100") or "").replace("100x100", "600x600")
+        if not art:
+            continue
+        try:
+            data = urllib.request.urlopen(
+                urllib.request.Request(art,
+                                       headers={"User-Agent": "Mozilla/5.0"}),
+                timeout=15).read()
+            if len(data) > 5000:
+                raw = dest_dir / ".cover-raw"
+                raw.write_bytes(data)
+                return raw
+        except Exception:
+            continue
     return None
 
 
@@ -466,12 +530,17 @@ def run(job):
                 id3.save(final)
             except Exception:
                 pass
-        if substituted:
-            # Ersättarens omslag är ofta en videoruta — byt till
-            # originalspårets albumkonst om den går att hämta.
-            raw = fetch_original_cover(entry, pdir)
-            if raw and replace_cover(final, raw):
-                log("Omslag hämtat från originalspåret.")
+        # Omslagstrappa: 1) postens egen kvadratiska konst (facit när den
+        # finns), 2) originalets konst för ersatta spår, 3) iTunes för
+        # video-poster, 4) behåll den beskurna videominiatyren.
+        raw, src = entry_square_art(entry, pdir), None
+        if raw is None and substituted:
+            raw, src = fetch_original_cover(entry, pdir), "originalspåret"
+        if raw is None and retag:
+            raw, src = itunes_cover(raw_artist, track_name,
+                                    info.get("duration"), pdir), "iTunes"
+        if raw and replace_cover(final, raw) and src:
+            log(f"Omslag hämtat från {src}.")
         # Arkivet uppdateras endast för fullständigt klara låtar.
         with archive_path.open("a", encoding="utf-8") as fh:
             fh.write(f"youtube {vid}\n")
