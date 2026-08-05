@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS playlists (
     folder TEXT NOT NULL,
     url TEXT NOT NULL,
     shanling INTEGER NOT NULL DEFAULT 1,
+    prune INTEGER NOT NULL DEFAULT 0,
     created TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (profile_id, folder)
 );
@@ -62,6 +63,10 @@ def init() -> None:
         if "cookie_mode" not in cols:
             c.execute("ALTER TABLE profiles ADD COLUMN cookie_mode TEXT "
                       "NOT NULL DEFAULT 'fallback'")
+        pl_cols = [r["name"] for r in c.execute("PRAGMA table_info(playlists)")]
+        if "prune" not in pl_cols:
+            c.execute("ALTER TABLE playlists ADD COLUMN prune INTEGER "
+                      "NOT NULL DEFAULT 0")
         # Jobb som var igång vid en omstart kan inte återupptas — men
         # förklara varför i loggen, annars ser det ut som ett gåtfullt fel.
         orphans = c.execute("SELECT id FROM jobs "

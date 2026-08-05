@@ -74,7 +74,7 @@ class Runner:
         with db.connect() as c:
             row = c.execute(
                 "SELECT j.id, j.profile_id, p.url, p.folder, p.shanling, "
-                "pr.home, pr.cookie_mode "
+                "p.prune, pr.home, pr.cookie_mode "
                 "FROM jobs j JOIN playlists p ON p.id = j.playlist_id "
                 "JOIN profiles pr ON pr.id = j.profile_id WHERE j.id=?",
                 (job_id,)).fetchone()
@@ -97,6 +97,7 @@ class Runner:
         payload = json.dumps({
             "home": str(home), "folder": row["folder"],
             "url": row["url"], "shanling": row["shanling"],
+            "prune": row["prune"],
             "cookiefile": str(cookiefile) if cookiefile.exists() else None,
             "cookie_mode": row["cookie_mode"],
         })

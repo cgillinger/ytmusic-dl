@@ -585,6 +585,35 @@ def run(job):
     archived = read_archive(archive_path)
     manifest = bootstrap_manifest(pdir, entries, load_manifest(pdir), archived)
 
+    if job.get("prune"):
+        # "Spellistan är sanningen": filer vars låt strukits ur spellistan
+        # raderas från disk. Tomma spellistor når aldrig hit (returen ovan) —
+        # ett API-hicka som ger noll poster kan alltså inte tömma mappen.
+        current = {e["id"] for e in entries if e.get("id")}
+        pruned = 0
+        for vid in [v for v in manifest if v not in current]:
+            fn = manifest.pop(vid)
+            path = pdir / fn
+            if path.exists() and fn not in manifest.values():
+                path.unlink()
+                pruned += 1
+                log(f"Struken ur spellistan — raderad från disk: {fn}")
+        if pruned:
+            save_manifest(pdir, manifest)
+            what = (f"{pruned} struken låt raderad" if pruned == 1
+                    else f"{pruned} strukna låtar raderade")
+            log(f"{what} — försvinner från mp3-spelaren nästa gång du "
+                f"kopierar dit spellistan.")
+        if archived - current:
+            # Strukna id:n bort ur arkivet — läggs låten tillbaka i
+            # spellistan senare ska den hämtas om, inte hoppas över.
+            keep = [line for line in archive_path.read_text(
+                        encoding="utf-8", errors="replace").splitlines()
+                    if line.split() and line.split()[-1] in current]
+            archive_path.write_text(
+                "".join(f"{line}\n" for line in keep), encoding="utf-8")
+            archived &= current
+
     todo = [e for e in entries if e.get("id") and e["id"] not in archived]
     missing_id = sum(1 for e in entries if not e.get("id"))
     skipped = len(entries) - len(todo) - missing_id

@@ -246,7 +246,8 @@ $("btn-fetch").addEventListener("click", async () => {
   $("btn-fetch").disabled = true;
   try {
     const res = await api("/api/playlists", { method: "POST",
-      body: { url, name, shanling: $("shanling").checked } });
+      body: { url, name, shanling: $("shanling").checked,
+        prune: $("prune").checked } });
     $("url").value = ""; $("plname").value = ""; setProbe(null);
     await afterJobStart(res.job_id);
   } catch (ex) {
@@ -305,6 +306,42 @@ async function refreshPlaylists() {
       actions.push(el("button", { class: "btn btn-ghost btn-s",
         onclick: () => syncToPlayer(p) }, "Kopiera till mp3-spelare"));
     }
+    // "Spellistan är sanningen" — raderar strukna låtar vid hämtning.
+    // Påslag kräver en bekräftelse eftersom filer faktiskt tas bort.
+    const pruneBox = el("input", { type: "checkbox",
+      ...(p.prune ? { checked: "" } : {}) });
+    pruneBox.addEventListener("change", async () => {
+      if (pruneBox.checked) {
+        pruneBox.checked = false;
+        modal("Spellistan är sanningen?",
+          el("p", {}, `Låtar som du stryker ur "${p.name}" raderas då från ` +
+            "hårddisken vid nästa hämtning — och försvinner från " +
+            "mp3-spelaren nästa gång du kopierar dit spellistan."),
+          el("p", {}, "Lägger du tillbaka en låt i spellistan hämtas den " +
+            "om igen."),
+          el("div", { class: "row" },
+            el("button", { class: "btn btn-rec", onclick: async () => {
+              try {
+                await api(`/api/playlists/${p.id}`, { method: "PATCH",
+                  body: { prune: true } });
+              } catch (ex) { modal("Hoppsan", el("p", {}, ex.message)); return; }
+              $("modal").close();
+              refreshPlaylists();
+            } }, "Slå på")));
+      } else {
+        try {
+          await api(`/api/playlists/${p.id}`, { method: "PATCH",
+            body: { prune: false } });
+        } catch (ex) { modal("Hoppsan", el("p", {}, ex.message)); }
+        refreshPlaylists();
+      }
+    });
+    const pruneRow = el("label", { class: "pl-prune",
+      title: "Struket ur spellistan raderas från hårddisken vid nästa " +
+        "hämtning och från mp3-spelaren vid nästa kopiering." },
+      pruneBox, el("span", {}, "Spellistan är sanningen — struket raderas " +
+        "vid hämtning"));
+
     actions.push(el("button", { class: "linkish", onclick: () => {
       modal("Ta bort ur listan?",
         el("p", {}, `"${p.name}" försvinner bara ur listan här — de hämtade ` +
@@ -323,7 +360,8 @@ async function refreshPlaylists() {
         el("div", { class: "pl-name" }, p.name,
           ...(p.shanling ? [el("span", { class: "tag" }, "MP3-SPELARE")] : [])),
         el("div", { class: metaClass }, meta),
-        el("div", { class: "pl-actions" }, ...actions))));
+        el("div", { class: "pl-actions" }, ...actions),
+        pruneRow)));
   }
 }
 

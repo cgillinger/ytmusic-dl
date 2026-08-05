@@ -134,6 +134,11 @@ class PlaylistIn(BaseModel):
     url: str
     name: str
     shanling: bool = True
+    prune: bool = False
+
+
+class PlaylistPatch(BaseModel):
+    prune: bool
 
 
 class CookiesIn(BaseModel):
@@ -345,10 +350,10 @@ def create_playlist(body: PlaylistIn, profile=Depends(require_profile)):
                 409, "Du har redan en spellista med det namnet — "
                      "använd 'Hämta nya låtar' på den istället.")
         cur = c.execute(
-            "INSERT INTO playlists (profile_id, name, folder, url, shanling) "
-            "VALUES (?,?,?,?,?)",
+            "INSERT INTO playlists (profile_id, name, folder, url, shanling, "
+            "prune) VALUES (?,?,?,?,?,?)",
             (profile["id"], body.name.strip() or folder, folder, url,
-             int(body.shanling)))
+             int(body.shanling), int(body.prune)))
         playlist_id = cur.lastrowid
     job_id = _start_job(playlist_id, profile["id"])
     return {"playlist_id": playlist_id, "job_id": job_id}
@@ -359,6 +364,16 @@ def fetch_playlist(playlist_id: int, profile=Depends(require_profile)):
     with db.connect() as c:
         _playlist_or_404(c, playlist_id, profile["id"])
     return {"job_id": _start_job(playlist_id, profile["id"])}
+
+
+@app.patch("/api/playlists/{playlist_id}")
+def update_playlist(playlist_id: int, body: PlaylistPatch,
+                    profile=Depends(require_profile)):
+    with db.connect() as c:
+        _playlist_or_404(c, playlist_id, profile["id"])
+        c.execute("UPDATE playlists SET prune=? WHERE id=?",
+                  (int(body.prune), playlist_id))
+    return {"ok": True, "prune": body.prune}
 
 
 @app.delete("/api/playlists/{playlist_id}")

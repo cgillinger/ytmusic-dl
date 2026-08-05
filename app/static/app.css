@@ -316,6 +316,13 @@ input:focus-visible {
 }
 .pl-meta.queued { color: var(--warn); font-weight: 700; }
 .pl-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+.pl-prune {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  cursor: pointer; width: fit-content;
+}
+.pl-prune input { accent-color: var(--ok); cursor: pointer; flex: none; }
+.pl-prune:hover { color: var(--ink); }
 
 /* ---------- jobbpanelen: däcket ---------- */
 
