@@ -30,6 +30,12 @@ ska slippa underhålla den.
 - **Numret på disk = spårets position i spellistan, alltid.** En id→fil-karta
   per mapp numrerar om filerna när listan ändras. Låtar som strukits ur
   listan behåller sin fil men förlorar numret.
+- **"Spellistan är sanningen"** (kryssruta per spellista, av som standard):
+  låtar som stryks ur spellistan **raderas** från hårddisken vid nästa
+  hämtning — och försvinner från mp3-spelaren nästa gång man kopierar dit.
+  Läggs låten tillbaka i listan hämtas den om. En spellista som plötsligt
+  läses som tom raderar aldrig något (skydd mot API-hicka). Avstängt gäller
+  raden ovanför: strukna låtar ligger kvar, bara utan nummer.
 - **Mp3-spelarläge** (per spellista, på som standard): numrerade filnamn
   (`001 - Artist - Titel.mp3`) plus en `.m3u` med relativa sökvägar så som
   Shanling M0s vill ha den. Av ger rena `Artist - Titel.mp3`-filer.
@@ -92,14 +98,57 @@ Kräver en Docker-värd med de hemkataloger som ska serveras. Appen är byggd
 kring **Synologys användarhantering** (se nedan), men kan köras i andra
 miljöer — se [Andra miljöer än Synology](#andra-miljöer-än-synology).
 
+### Enklast: färdig Docker-image
+
+En färdigbyggd image publiceras automatiskt till GitHub Container Registry
+vid varje ändring i det här repot:
+**`ghcr.io/cgillinger/ytmusic-dl:latest`** (x86_64 och ARM64). Du behöver
+alltså inte bygga något själv.
+
+Skapa en mapp för tjänsten (t.ex. `/volume1/docker/ytmusic-dl`) med en
+undermapp `data` och den här `docker-compose.yml`:
+
+```yaml
+services:
+  ytmusic-dl:
+    image: ghcr.io/cgillinger/ytmusic-dl:latest
+    container_name: ytmusic-dl
+    ports:
+      - "8201:8201"
+    volumes:
+      - /volume2/homes:/homes   # anpassa till din homes-volym
+      - ./data:/data
+    environment:
+      - TZ=Europe/Stockholm
+    restart: unless-stopped
+```
+
+Starta med `docker compose up -d` — eller helt utan terminal i **Synologys
+Container Manager**: lägg mappen och filen på plats med File Station, öppna
+Container Manager → **Projekt** → **Skapa**, peka på mappen och välj den
+befintliga compose-filen. (Undermappen `data` måste finnas innan första
+starten — Synology skapar inte bind-monteringskataloger åt dig.)
+
+Öppna sedan `http://<värd>:8201`, skapa en profil, klistra in en
+spellistlänk.
+
+**Uppdatera till senaste versionen:**
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+I Container Manager: fliken **Avbild** visar en uppdateringssymbol när en
+nyare image finns — uppdatera den där och starta om projektet.
+
+### Alternativ: bygg själv från källkoden
+
 ```bash
 git clone https://github.com/cgillinger/ytmusic-dl.git
 cd ytmusic-dl
 mkdir data          # måste finnas före första starten (Synology skapar den inte)
 docker compose up -d --build
 ```
-
-Öppna `http://<värd>:8201`, skapa en profil, klistra in en spellistlänk.
 
 ### Konfiguration (miljövariabler)
 

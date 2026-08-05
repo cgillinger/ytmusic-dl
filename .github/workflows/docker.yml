@@ -1,0 +1,56 @@
+# Bygger Docker-imagen och publicerar den till GitHub Container Registry
+# (ghcr.io/cgillinger/ytmusic-dl) vid varje push till main. Syftet är att
+# den som vill köra appen ska kunna peka Synologys Container Manager på en
+# färdig image i stället för att bygga själv — se README.
+name: Bygg och publicera Docker-image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU + buildx för multi-arch: amd64 (Synology m.fl.) och arm64
+      # (ARM-Synology, Raspberry Pi).
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Taggar: "latest" på main, versionsnummer på v*-taggar, plus
+      # kort commit-sha så en specifik version alltid går att peka ut.
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
