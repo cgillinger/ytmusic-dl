@@ -88,7 +88,9 @@ mappstrukturen speglar kortet.
 
 ## Kom igång
 
-Kräver en Docker-värd med de hemkataloger som ska serveras.
+Kräver en Docker-värd med de hemkataloger som ska serveras. Appen är byggd
+kring **Synologys användarhantering** (se nedan), men kan köras i andra
+miljöer — se [Andra miljöer än Synology](#andra-miljöer-än-synology).
 
 ```bash
 git clone https://github.com/cgillinger/ytmusic-dl.git
@@ -112,6 +114,12 @@ Lägg platsspecifika värden i en `docker-compose.override.yml` (gitignorad).
 
 ### Synology-noter
 
+Appen har ingen egen kontodatabas — den är byggd för att **NAS:ens konton
+är kontona**. Profilväljaren är en listning av hemkatalogerna i den
+monterade homes-mappen, och varje nedladdningsjobb körs med den uid/gid som
+äger katalogen. Skapa ett nytt konto i DSM så dyker profilen upp av sig
+själv; ta bort kontot så försvinner den.
+
 - Compose-filen monterar `/volume2/homes` — anpassa till din volym.
 - Containern måste köra som **root** (den byter användare per jobb); lägg
   inte till något `user:`-direktiv.
@@ -119,6 +127,31 @@ Lägg platsspecifika värden i en `docker-compose.override.yml` (gitignorad).
   proxy-regel i DSM (Kontrollpanelen → Inloggningsportal → Avancerat →
   Omvänd proxy) från en HTTPS-port till `http://localhost:8201`.
   Självsignerat certifikat räcker — exponera ingenting mot internet.
+
+### Andra miljöer än Synology
+
+Det Synology-specifika är egentligen bara sökvägen `/volume2/homes` och
+HTTPS-tipset ovan. Allt appen kräver av värden är:
+
+1. **En katalog med en undermapp per användare**, monterad på `/homes` i
+   containern. Undermappens namn blir profilnamnet.
+2. **Att varje undermapp ägs av rätt unix-konto** — jobben körs som mappens
+   ägar-uid/gid, så det är ägarskapet på disk som styr vem filerna tillhör.
+3. **Att containern får köra som root** (den byter till profilägaren per
+   jobb).
+
+Det gör att den fungerar direkt på t.ex. en vanlig Linux-server: montera
+`/home:/homes` i `docker-compose.override.yml` så listas maskinens konton
+precis som på en Synology. Mappar som börjar med `@` eller `.` hoppas över,
+liksom `admin`/`guest` och allt i `HOMES_EXCLUDE`.
+
+**Enanvändarbruk:** peka `HOMES_DIR`-monteringen på valfri katalog som
+innehåller en enda mapp ägd av dig — profilväljaren visar då bara den.
+
+**Fungerar sämre:** Docker Desktop på macOS/Windows, där bind-monteringar
+inte bevarar unix-ägarskap per användare. Nedladdningarna funkar, men
+"rätt filägare"-egenskapen förlorar sin mening och alla profiler får samma
+ägare.
 
 ## Spotify-spellistor
 
