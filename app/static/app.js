@@ -373,18 +373,26 @@ async function afterJobStart(jobId) {
   await refreshPlaylists();
   let job = null;
   try { job = await api(`/api/jobs/${jobId}`); } catch {}
+  // "queued" direkt efter start kan vara en övergångsstatus: jobbet är
+  // inlagt i kön men jobbkörartråden har inte hunnit plocka det än.
+  // Köförklaringen visas därför bara om en ANNAN spellista faktiskt har
+  // ett aktivt jobb — annars är kön tom och hämtningen startar strax.
   if (job && job.status === "queued") {
-    const runningName = state.playlists
-      .find(p => p.active_job?.status === "running")?.name;
-    modal("Ställd i kö",
-      el("p", {}, "Bara en spellista hämtas åt gången (snällt mot både " +
-        "NAS:en och YouTube)."),
-      el("p", {}, runningName
-        ? `Just nu hämtas "${runningName}". Den här spellistan startar ` +
-          "automatiskt direkt efteråt — du behöver inte göra något."
-        : "En annan hämtning pågår. Den här spellistan startar automatiskt " +
-          "direkt efteråt."));
-    return;
+    const others = state.playlists.filter(p =>
+      p.id !== job.playlist?.id && p.active_job);
+    if (others.length) {
+      const runningName = others
+        .find(p => p.active_job.status === "running")?.name;
+      modal("Ställd i kö",
+        el("p", {}, "Bara en spellista hämtas åt gången (snällt mot både " +
+          "NAS:en och YouTube)."),
+        el("p", {}, runningName
+          ? `Just nu hämtas "${runningName}". Den här spellistan startar ` +
+            "automatiskt direkt efteråt — du behöver inte göra något."
+          : "En annan hämtning pågår. Den här spellistan startar " +
+            "automatiskt direkt efteråt."));
+      return;
+    }
   }
   pollJob(jobId);
   $("job-panel").scrollIntoView({ behavior: "smooth", block: "start" });

@@ -443,7 +443,7 @@ def job_status(job_id: int, after: int = 0, profile=Depends(require_profile)):
                         (job_id, profile["id"])).fetchone()
         if not job:
             raise HTTPException(404, "Jobbet finns inte.")
-        playlist = c.execute("SELECT name, folder, shanling FROM playlists "
+        playlist = c.execute("SELECT id, name, folder, shanling FROM playlists "
                              "WHERE id=?", (job["playlist_id"],)).fetchone()
         log = c.execute(
             "SELECT id, level, msg FROM job_log WHERE job_id=? AND id>? "
