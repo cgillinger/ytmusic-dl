@@ -60,8 +60,9 @@ ska slippa underhålla den.
   bara nya låtar rakt till minneskortet (File System Access API) och städar
   bort omdöpta gamla filer. Mappvalet görs bara första gången — kortet får
   en markörfil som id och webbläsaren minns handtaget. Efter synken visas
-  bara de Shanling-steg som återstår (biblioteksskanning, spellistimport),
-  utifrån status som lagras i markörfilen på kortet — så det stämmer även
+  bara det som återstår på spelaren: förstagångsstegen (biblioteksskanning)
+  tills markörfilen på kortet säger att de är gjorda — sedan bara "spela
+  via Folders", som alltid är färsk utan importsteg. Stämmer därmed även
   när en annan dator (Linux eller Windows) senast synkade.
 - **Begripliga fel på svenska.** Privat spellista? Bot-kontroll? Avbruten av
   omstart? Appen förklarar vad som hänt och vad man gör åt det, där man

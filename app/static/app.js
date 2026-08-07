@@ -556,9 +556,10 @@ async function getPlayerRoot() {
   return root;
 }
 
-/* Hela receptet, alltid nåbart via länk i klart-rutan — ifall en flagga i
-   markörfilen säger "klart" fast steget aldrig utfördes på spelaren. */
+/* Hela receptet, alltid nåbart via länk i klart-rutan. Folders är
+   huvudvägen: numreringen gör mappen till spellistan, utan importsteg. */
 function shanlingGuide(folder) {
+  const f = folder ? `”${folder}”` : "spellistans mapp";
   modal("Shanling M0s — så funkar det",
     el("ol", {},
       el("li", {}, "Mata ut kortet i datorn (Säker borttagning i Windows) " +
@@ -568,12 +569,14 @@ function shanlingGuide(folder) {
         "Automatic (då skannar spelaren om musiken varje gång kabeln dras " +
         "ur) och kör Update Music en första gång. Utan skanningen visar " +
         "spelaren ”No music” och artister som ”unknown”."),
-      el("li", {}, "Varje ny spellista importeras en gång: My Music → " +
-        "Playlists → ⋮ → Import playlist" +
-        (folder ? ` → ”${folder}”.` : ".")),
-      el("li", {}, "När en spellista har ändrats: ta bort den i Playlists " +
-        "på spelaren och importera om den — den uppdateras inte av sig " +
-        "själv.")));
+      el("li", {}, `Spela: Folders → ${f}. Låtarna ligger i spellistans ` +
+        "ordning (001, 002 …) och mappen är alltid färsk efter en synk — " +
+        "inget mer behövs.")),
+    el("p", {}, "Playlists-menyn på spelaren är frivillig: My Music → " +
+      "Playlists → ⋮ → Import playlist lägger in spellistan där också, " +
+      "men den kopian uppdateras ALDRIG av sig själv — efter varje ändring " +
+      "måste den tas bort och importeras om. Spela via Folders, så slipper " +
+      "du det helt."));
 }
 
 async function syncToPlayer(playlist) {
@@ -629,45 +632,47 @@ async function syncToPlayer(playlist) {
       await w.write(manifest.m3u.content);
       await w.close();
     }
-    // Instruktionen anpassas efter kortets status i markörfilen: bara de
-    // steg som återstår för just den här spelaren och spellistan visas.
+    // Folders-vyn är huvudvägen (numreringen = spellistans ordning, alltid
+    // färsk) — därför inga importsteg här. Förstagångsstegen visas tills
+    // markörfilen på kortet säger att de är avklarade.
     const changed = copied > 0 || removed > 0;
     const marker = await readMarker(root);
-    const imported = (marker.importerade || []).includes(manifest.folder);
-    const steps = [];
-    if (!marker.instruerad)
-      steps.push(el("li", {}, "En gång per spelare: System → " +
-        "Update Library — slå på Automatic och kör Update Music. " +
-        "Annars visar spelaren ”No music” och artister som ”unknown”."));
-    if (!imported)
-      steps.push(el("li", {}, "Importera spellistan: My Music → Playlists " +
-        `→ ⋮ → Import playlist → ”${manifest.folder}”.`));
-    else if (changed)
-      steps.push(el("li", {}, `Spellistan har ändrats: ta bort ` +
-        `”${manifest.folder}” i Playlists på spelaren och importera om den ` +
-        "(⋮ → Import playlist) — den uppdateras inte av sig själv."));
     const summary = changed
       ? `Klart! ${copied} nya låtar kopierade` +
         (removed ? `, ${removed} inaktuella borttagna` : "") + "."
       : "Kortet var redan uppdaterat — inga nya låtar att kopiera.";
-    if (steps.length) {
-      steps.unshift(el("li", {}, "Mata ut kortet i datorn (Säker " +
-        "borttagning i Windows) och dra ur USB-kabeln."));
-      modal("Kopierat till mp3-spelaren",
-        el("p", {}, summary),
-        el("p", {}, el("strong", {}, "Gör klart på spelaren (Shanling M0s):")),
-        el("ol", {}, ...steps),
-        el("p", {}, el("button", { class: "linkish",
-          onclick: () => shanlingGuide(manifest.folder) },
-          "Visa fullständiga instruktioner")));
+    const playHint = `Dra ur kabeln och spela: Folders → ”${manifest.folder}”` +
+      " — låtarna ligger i spellistans ordning.";
+    const nodes = [el("p", {}, summary)];
+    if (!marker.instruerad) {
+      nodes.push(
+        el("p", {}, el("strong", {},
+          "Första gången — gör i ordning spelaren (Shanling M0s):")),
+        el("ol", {},
+          el("li", {}, "Mata ut kortet i datorn (Säker borttagning i " +
+            "Windows) och dra ur USB-kabeln."),
+          el("li", {}, "System → Update Library: slå på Automatic och kör " +
+            "Update Music. Annars visar spelaren ”No music” och artister " +
+            "som ”unknown”."),
+          el("li", {}, `Spela: Folders → ”${manifest.folder}” — låtarna ` +
+            "ligger i spellistans ordning (001, 002 …). Ingen import " +
+            "behövs, mappen är alltid färsk efter en synk.")));
+    } else {
+      nodes.push(el("p", {}, playHint));
+      if (changed)
+        nodes.push(el("p", {}, "Om du någon gång importerat spellistan " +
+          "under My Music → Playlists är den kopian nu inaktuell — ta " +
+          "bort och importera om den där, eller spela via Folders så " +
+          "slipper du steget."));
+    }
+    nodes.push(el("p", {}, el("button", { class: "linkish",
+      onclick: () => shanlingGuide(manifest.folder) },
+      "Visa fullständiga instruktioner")));
+    modal("Kopierat till mp3-spelaren", ...nodes);
+    if (!marker.instruerad) {
       marker.spelare = marker.spelare || "Shanling M0s";
       marker.instruerad = true;
-      marker.importerade =
-        [...new Set([...(marker.importerade || []), manifest.folder])];
       await writeMarker(root, marker);
-    } else {
-      status.textContent = summary + " Spelaren uppdaterar sig själv när " +
-        "kabeln dras ur.";
     }
   } catch (ex) {
     status.textContent = "Kopieringen misslyckades: " + ex.message;
