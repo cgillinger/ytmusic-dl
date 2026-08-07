@@ -528,25 +528,49 @@ function confirmPlayerRoot(root, names) {
   return new Promise(resolve => {
     const done = ok => { resolve(ok); $("modal").close(); };
     $("modal").addEventListener("close", () => resolve(false), { once: true });
-    modal("Är detta mp3-spelarens minneskort?",
-      el("p", {}, `Vald mapp: ”${root.name}”` + (names.length
-        ? ` — innehåller: ${names.slice(0, 5).join(", ")}` +
-          (names.length > 5 ? " …" : "")
-        : " (tom)")),
-      el("p", {}, "Valet sparas — nästa gång kopierar appen hit direkt, " +
-        "utan att du behöver leta rätt på kortet igen."),
+    modal("Är det här spelarens minneskort?",
+      el("p", {}, `Du valde ”${root.name}”. ` + (names.length
+        ? `Där ligger: ${names.slice(0, 5).join(", ")}` +
+          (names.length > 5 ? " med mera." : ".")
+        : "Det är tomt just nu — helt okej om kortet är nytt eller " +
+          "nystädat.")),
+      el("p", {}, "Appen kommer ihåg valet, så det här behöver du bara " +
+        "göra en gång."),
       el("div", { class: "row" },
         el("button", { class: "btn btn-rec",
-          onclick: () => done(true) }, "Ja, kopiera hit")));
+          onclick: () => done(true) }, "Ja — kopiera musiken dit")));
+  });
+}
+
+/* Mappväljaren är flödets mest PC-iga moment — förklara vad som ska
+   väljas INNAN fönstret öppnas. Väljaren måste öppnas i klickhanteraren
+   (user activation-kravet). */
+function pickRootWithIntro() {
+  return new Promise(resolve => {
+    $("modal").addEventListener("close", () => resolve(null), { once: true });
+    modal("Peka ut spelarens minneskort",
+      el("p", {}, "Nu öppnas ett fönster som visar det som finns på " +
+        "datorn. Leta upp spelarens minneskort i listan — det brukar heta " +
+        "något med siffror, till exempel ”6432-6434” — klicka på det och " +
+        "tryck sedan på knappen som väljer mappen."),
+      el("p", {}, "Du behöver bara göra det här allra första gången."),
+      el("div", { class: "row" },
+        el("button", { class: "btn btn-rec", onclick: async () => {
+          let picked = null;
+          try {
+            picked = await window.showDirectoryPicker({ mode: "readwrite" });
+          } catch { /* avbrutet */ }
+          resolve(picked);
+          $("modal").close();
+        } }, "Okej, visa fönstret")));
   });
 }
 
 async function getPlayerRoot() {
   let root = await rememberedRoot();
   if (root) return root;
-  try {
-    root = await window.showDirectoryPicker({ mode: "readwrite" });
-  } catch { return null; /* avbrutet */ }
+  root = await pickRootWithIntro();
+  if (!root) return null;
   const names = [];
   for await (const name of root.keys())
     if (!name.startsWith(".")) names.push(name);
@@ -559,24 +583,23 @@ async function getPlayerRoot() {
 /* Hela receptet, alltid nåbart via länk i klart-rutan. Folders är
    huvudvägen: numreringen gör mappen till spellistan, utan importsteg. */
 function shanlingGuide(folder) {
-  const f = folder ? `”${folder}”` : "spellistans mapp";
-  modal("Shanling M0s — så funkar det",
+  const f = folder ? `”${folder}”` : "din spellista";
+  modal("Så funkar mp3-spelaren",
     el("ol", {},
-      el("li", {}, "Mata ut kortet i datorn (Säker borttagning i Windows) " +
-        "och dra ur USB-kabeln — spelaren ser inte kortet medan kabeln " +
-        "sitter i."),
-      el("li", {}, "En gång per spelare: System → Update Library — slå på " +
-        "Automatic (då skannar spelaren om musiken varje gång kabeln dras " +
-        "ur) och kör Update Music en första gång. Utan skanningen visar " +
-        "spelaren ”No music” och artister som ”unknown”."),
-      el("li", {}, `Spela: Folders → ${f}. Låtarna ligger i spellistans ` +
-        "ordning (001, 002 …) och mappen är alltid färsk efter en synk — " +
-        "inget mer behövs.")),
-    el("p", {}, "Playlists-menyn på spelaren är frivillig: My Music → " +
-      "Playlists → ⋮ → Import playlist lägger in spellistan där också, " +
-      "men den kopian uppdateras ALDRIG av sig själv — efter varje ändring " +
-      "måste den tas bort och importeras om. Spela via Folders, så slipper " +
-      "du det helt."));
+      el("li", {}, "Klicka på ⏏ (mata ut) bredvid spelarens namn i " +
+        "datorns fillista och dra sedan ur kabeln. Spelaren kan inte " +
+        "spela något medan kabeln sitter i."),
+      el("li", {}, "Bara första gången: gå till System → Update Library " +
+        "i spelarens meny. Slå på Automatic och tryck en gång på Update " +
+        "Music. Då lär sig spelaren alla nya låtar av sig själv varje " +
+        "gång kabeln dras ur. (Hoppar man över det här säger spelaren " +
+        "”No music” och kallar alla artister ”unknown”.)"),
+      el("li", {}, `Lyssna: öppna Folders på spelaren och välj ${f}. ` +
+        "Låtarna ligger redan i samma ordning som i spellistan.")),
+    el("p", {}, "Spelaren har också en egen spellistmeny (My Music → " +
+      "Playlists), men den märker aldrig när en spellista ändras och " +
+      "blir snabbt gammal. Lyssna via Folders istället — samma låtar, " +
+      "samma ordning, alltid färska."));
 }
 
 /* ---------- kortstädning ----------
@@ -606,27 +629,29 @@ function cleanupCard(root, found) {
   const items = found.orphans.map(o => {
     const box = el("input", { type: "checkbox" });
     return { box, name: o.name, node: el("p", {}, el("label", {}, box,
-      ` ”${o.name}” (${o.files} objekt) — hör inte till någon av dina ` +
-      "spellistor")) };
+      ` ”${o.name}” (${o.files} filer) — den här känner tjänsten inte ` +
+      "igen. Kryssa i bara om du vet vad det är och inte vill ha kvar " +
+      "det.")) };
   });
   if (found.trash) {
     const box = el("input", { type: "checkbox" });
     box.checked = true;
     items.push({ box, name: found.trash, node: el("p", {}, el("label", {},
-      box, ` Datorns papperskorg (”${found.trash}”) — filer som ”raderats” ` +
-      "i datorns filhanterare men som spelaren fortfarande hittar och " +
-      "spelar")) });
+      box, " Datorns papperskorg — när man ”raderar” saker på kortet med " +
+      "datorn göms de egentligen bara här, och spelaren hittar och " +
+      "spelar dem ändå. Säker att ta bort.")) });
   }
   const status = el("p", {});
   modal("Städa kortet",
-    el("p", {}, "Markerade mappar tas bort från minneskortet. Låtar som " +
-      "hör till spellistor i tjänsten finns kvar på servern och kan " +
-      "kopieras ut igen — annat innehåll försvinner för gott."),
+    el("p", {}, "Det ikryssade tas bort från minneskortet — för alltid. " +
+      "Dina spellistor är säkra: musiken finns kvar här i tjänsten och " +
+      "kan alltid kopieras till kortet igen."),
     ...items.map(i => i.node), status,
     el("div", { class: "row" },
       el("button", { class: "btn btn-rec", onclick: async () => {
         const chosen = items.filter(i => i.box.checked);
-        if (!chosen.length) { status.textContent = "Inget är markerat."; return; }
+        if (!chosen.length) {
+          status.textContent = "Du har inte kryssat i något ännu."; return; }
         let removed = 0;
         try {
           for (const i of chosen) {
@@ -644,14 +669,14 @@ function cleanupCard(root, found) {
               if (n.endsWith(".m3u") && !dirs.has(n.slice(0, -4)))
                 await m3uDir.removeEntry(n);
           } catch {}
-          status.textContent = `Klart — ${removed} ` +
-            (removed === 1 ? "mapp borttagen." : "mappar borttagna.") +
-            " Kör Update Music på spelaren (eller låt Automatic göra det) " +
-            "så försvinner spåren ur biblioteket.";
+          status.textContent = "Klart — borttaget! Om spelaren ändå visar " +
+            "gamla låtar: dra ur kabeln så uppdaterar den sig själv (om " +
+            "Automatic är på), eller tryck på Update Music i " +
+            "System-menyn.";
         } catch (ex) {
           status.textContent = "Kunde inte ta bort allt: " + ex.message;
         }
-      } }, "Ta bort markerade")));
+      } }, "Ta bort det ikryssade")));
 }
 
 async function syncToPlayer(playlist) {
@@ -716,40 +741,38 @@ async function syncToPlayer(playlist) {
       ? `Klart! ${copied} nya låtar kopierade` +
         (removed ? `, ${removed} inaktuella borttagna` : "") + "."
       : "Kortet var redan uppdaterat — inga nya låtar att kopiera.";
-    const playHint = `Dra ur kabeln och spela: Folders → ”${manifest.folder}”` +
-      " — låtarna ligger i spellistans ordning.";
+    const playHint = "Dra ur kabeln och lyssna: öppna Folders på spelaren " +
+      `och välj ”${manifest.folder}” — låtarna ligger redan i rätt ordning.`;
     const nodes = [el("p", {}, summary)];
     if (!marker.instruerad) {
       nodes.push(
-        el("p", {}, el("strong", {},
-          "Första gången — gör i ordning spelaren (Shanling M0s):")),
+        el("p", {}, el("strong", {}, "Första gången — tre steg:")),
         el("ol", {},
-          el("li", {}, "Mata ut kortet i datorn (Säker borttagning i " +
-            "Windows) och dra ur USB-kabeln."),
-          el("li", {}, "System → Update Library: slå på Automatic och kör " +
-            "Update Music. Annars visar spelaren ”No music” och artister " +
-            "som ”unknown”."),
-          el("li", {}, `Spela: Folders → ”${manifest.folder}” — låtarna ` +
-            "ligger i spellistans ordning (001, 002 …). Ingen import " +
-            "behövs, mappen är alltid färsk efter en synk.")));
+          el("li", {}, "Klicka på ⏏ (mata ut) bredvid spelarens namn i " +
+            "datorns fillista och dra sedan ur kabeln."),
+          el("li", {}, "I spelarens meny: System → Update Library. Slå på " +
+            "Automatic och tryck en gång på Update Music. Då hittar " +
+            "spelaren alla låtar — annars säger den ”No music” och kallar " +
+            "artisterna ”unknown”."),
+          el("li", {}, `Lyssna: öppna Folders och välj ”${manifest.folder}”` +
+            " — låtarna ligger redan i rätt ordning.")));
     } else {
       nodes.push(el("p", {}, playHint));
       if (changed)
-        nodes.push(el("p", {}, "Om du någon gång importerat spellistan " +
-          "under My Music → Playlists är den kopian nu inaktuell — ta " +
-          "bort och importera om den där, eller spela via Folders så " +
-          "slipper du steget."));
+        nodes.push(el("p", {}, "Har du någon gång lagt in spellistan i " +
+          "spelarens egen Playlists-meny? Den kopian ser inte " +
+          "ändringarna — lyssna via Folders istället, där är allt alltid " +
+          "färskt."));
     }
     try {
       const found = await findCardOrphans(root);
       if (found.orphans.length || found.trash)
         nodes.push(el("p", {},
-          found.orphans.length
-            ? "Kortet har mappar som inte hör till någon av dina " +
-              "spellistor. "
-            : "Kortet har en kvarglömd papperskorg från datorn. ",
+          "Det ligger saker på minneskortet som inte kommer från dina " +
+          "spellistor. ",
           el("button", { class: "linkish",
-            onclick: () => cleanupCard(root, found) }, "Städa kortet …")));
+            onclick: () => cleanupCard(root, found) },
+            "Se vad — och städa …")));
     } catch {} /* städningen är grädde — synken är redan klar */
     nodes.push(el("p", {}, el("button", { class: "linkish",
       onclick: () => shanlingGuide(manifest.folder) },
