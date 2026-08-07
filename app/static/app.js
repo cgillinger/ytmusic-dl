@@ -579,6 +579,81 @@ function shanlingGuide(folder) {
       "du det helt."));
 }
 
+/* ---------- kortstädning ----------
+   Synk-knappen speglar bara sin egen spellistmapp — mappar vars spellista
+   tagits bort i tjänsten blir kvar på kortet. Hit hör också datorns
+   papperskorg (.Trash-1000/$RECYCLE.BIN): "raderade" filer ligger kvar där
+   och spelaren skannar mappen som vilken som helst. Aldrig tyst radering:
+   allt listas med kryssrutor; bara papperskorgen är förkryssad. */
+
+async function findCardOrphans(root) {
+  const keep = new Set((await api("/api/playlists")).map(p => p.folder));
+  const orphans = [];
+  let trash = null;
+  for await (const [name, h] of root.entries()) {
+    if (h.kind !== "directory" || name === "_explaylist_data") continue;
+    if (/^\.Trash|^\$RECYCLE\.BIN$/i.test(name)) { trash = name; continue; }
+    if (name.startsWith(".") || name === "System Volume Information") continue;
+    if (keep.has(name)) continue;
+    let files = 0;
+    for await (const _ of h.keys()) files++;
+    orphans.push({ name, files });
+  }
+  return { orphans, trash };
+}
+
+function cleanupCard(root, found) {
+  const items = found.orphans.map(o => {
+    const box = el("input", { type: "checkbox" });
+    return { box, name: o.name, node: el("p", {}, el("label", {}, box,
+      ` ”${o.name}” (${o.files} objekt) — hör inte till någon av dina ` +
+      "spellistor")) };
+  });
+  if (found.trash) {
+    const box = el("input", { type: "checkbox" });
+    box.checked = true;
+    items.push({ box, name: found.trash, node: el("p", {}, el("label", {},
+      box, ` Datorns papperskorg (”${found.trash}”) — filer som ”raderats” ` +
+      "i datorns filhanterare men som spelaren fortfarande hittar och " +
+      "spelar")) });
+  }
+  const status = el("p", {});
+  modal("Städa kortet",
+    el("p", {}, "Markerade mappar tas bort från minneskortet. Låtar som " +
+      "hör till spellistor i tjänsten finns kvar på servern och kan " +
+      "kopieras ut igen — annat innehåll försvinner för gott."),
+    ...items.map(i => i.node), status,
+    el("div", { class: "row" },
+      el("button", { class: "btn btn-rec", onclick: async () => {
+        const chosen = items.filter(i => i.box.checked);
+        if (!chosen.length) { status.textContent = "Inget är markerat."; return; }
+        let removed = 0;
+        try {
+          for (const i of chosen) {
+            status.textContent = `Tar bort ”${i.name}” …`;
+            await root.removeEntry(i.name, { recursive: true });
+            removed++;
+          }
+          // Föräldralösa spellistfiler följer med ut (regenereras vid synk).
+          const dirs = new Set();
+          for await (const [n, h] of root.entries())
+            if (h.kind === "directory") dirs.add(n);
+          try {
+            const m3uDir = await root.getDirectoryHandle("_explaylist_data");
+            for await (const n of m3uDir.keys())
+              if (n.endsWith(".m3u") && !dirs.has(n.slice(0, -4)))
+                await m3uDir.removeEntry(n);
+          } catch {}
+          status.textContent = `Klart — ${removed} ` +
+            (removed === 1 ? "mapp borttagen." : "mappar borttagna.") +
+            " Kör Update Music på spelaren (eller låt Automatic göra det) " +
+            "så försvinner spåren ur biblioteket.";
+        } catch (ex) {
+          status.textContent = "Kunde inte ta bort allt: " + ex.message;
+        }
+      } }, "Ta bort markerade")));
+}
+
 async function syncToPlayer(playlist) {
   if (!window.showDirectoryPicker || !window.isSecureContext) {
     modal("Kopiera till mp3-spelare",
@@ -665,6 +740,17 @@ async function syncToPlayer(playlist) {
           "bort och importera om den där, eller spela via Folders så " +
           "slipper du steget."));
     }
+    try {
+      const found = await findCardOrphans(root);
+      if (found.orphans.length || found.trash)
+        nodes.push(el("p", {},
+          found.orphans.length
+            ? "Kortet har mappar som inte hör till någon av dina " +
+              "spellistor. "
+            : "Kortet har en kvarglömd papperskorg från datorn. ",
+          el("button", { class: "linkish",
+            onclick: () => cleanupCard(root, found) }, "Städa kortet …")));
+    } catch {} /* städningen är grädde — synken är redan klar */
     nodes.push(el("p", {}, el("button", { class: "linkish",
       onclick: () => shanlingGuide(manifest.folder) },
       "Visa fullständiga instruktioner")));

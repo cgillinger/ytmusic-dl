@@ -63,7 +63,11 @@ ska slippa underhålla den.
   bara det som återstår på spelaren: förstagångsstegen (biblioteksskanning)
   tills markörfilen på kortet säger att de är gjorda — sedan bara "spela
   via Folders", som alltid är färsk utan importsteg. Stämmer därmed även
-  när en annan dator (Linux eller Windows) senast synkade.
+  när en annan dator (Linux eller Windows) senast synkade. Efter synken
+  erbjuds kortstädning: mappar som inte längre hör till någon spellista och
+  datorns kvarglömda papperskorg (.Trash-1000/$RECYCLE.BIN — där ligger
+  "raderade" filer som spelaren annars fortsätter spela) listas med
+  kryssrutor och tas bort först efter bekräftelse.
 - **Begripliga fel på svenska.** Privat spellista? Bot-kontroll? Avbruten av
   omstart? Appen förklarar vad som hänt och vad man gör åt det, där man
   tittar.
