@@ -58,7 +58,11 @@ ska slippa underhålla den.
   omstart.
 - **Kopiera direkt till spelaren.** I Chrome/Edge över HTTPS synkar en knapp
   bara nya låtar rakt till minneskortet (File System Access API) och städar
-  bort omdöpta gamla filer.
+  bort omdöpta gamla filer. Mappvalet görs bara första gången — kortet får
+  en markörfil som id och webbläsaren minns handtaget. Efter synken visas
+  bara de Shanling-steg som återstår (biblioteksskanning, spellistimport),
+  utifrån status som lagras i markörfilen på kortet — så det stämmer även
+  när en annan dator (Linux eller Windows) senast synkade.
 - **Begripliga fel på svenska.** Privat spellista? Bot-kontroll? Avbruten av
   omstart? Appen förklarar vad som hänt och vad man gör åt det, där man
   tittar.

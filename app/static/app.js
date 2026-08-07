@@ -466,7 +466,115 @@ function pollJob(jobId) {
 }
 
 /* ---------- "Kopiera till mp3-spelare" (File System Access API) ----------
-   OBS: otestad mot fysisk spelare — M0s har inte levererats än. */
+   Verifierad mot fysisk M0s 2026-08-07: relativa sökvägar i m3u:n fungerar.
+   Spelaren kräver dock att biblioteket är skannat (System → Update Library)
+   innan importen hittar något — därav påminnelsen i klart-meddelandet.
+
+   Mappvalet görs bara första gången: handtaget sparas i IndexedDB och en
+   markörfil på kortet intygar att det är rätt kort. Webbläsare kan inte
+   läsa USB-id:n för lagringsenheter, så markörfilen ÄR kortets id.
+
+   Markörfilen bär också kortets status som JSON ({instruerad, importerade})
+   — på kortet, inte i webbläsaren, så att instruktionerna blir rätt även
+   när ett annat konto eller en annan dator (Linux/Windows) synkar. */
+
+const MARKER = ".ytmusic-dl-spelare";
+
+async function readMarker(root) {
+  try {
+    const f = await (await root.getFileHandle(MARKER)).getFile();
+    return JSON.parse(await f.text() || "{}");
+  } catch { return {}; }
+}
+
+async function writeMarker(root, marker) {
+  const fh = await root.getFileHandle(MARKER, { create: true });
+  const w = await fh.createWritable();
+  await w.write(JSON.stringify(marker));
+  await w.close();
+}
+
+function kvStore(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open("ymdl", 1);
+    open.onupgradeneeded = () => open.result.createObjectStore("kv");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const req = fn(open.result.transaction("kv", mode).objectStore("kv"));
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    };
+  });
+}
+const kvGet = k => kvStore("readonly", s => s.get(k));
+const kvSet = (k, v) => kvStore("readwrite", s => s.put(v, k));
+
+/* Sparat kort: giltigt om handtaget svarar, vi får skrivlov (ett klick i
+   webbläsarens fråga — eller inget alls om "Tillåt varje gång" valts) och
+   markörfilen finns kvar. Annars: tillbaka till mappväljaren. */
+async function rememberedRoot() {
+  try {
+    const root = await kvGet("playerRoot");
+    if (!root) return null;
+    if (await root.queryPermission({ mode: "readwrite" }) !== "granted" &&
+        await root.requestPermission({ mode: "readwrite" }) !== "granted")
+      return null;
+    await root.getFileHandle(MARKER);
+    return root;
+  } catch { return null; /* urkopplat, omdöpt eller främmande kort */ }
+}
+
+function confirmPlayerRoot(root, names) {
+  return new Promise(resolve => {
+    const done = ok => { resolve(ok); $("modal").close(); };
+    $("modal").addEventListener("close", () => resolve(false), { once: true });
+    modal("Är detta mp3-spelarens minneskort?",
+      el("p", {}, `Vald mapp: ”${root.name}”` + (names.length
+        ? ` — innehåller: ${names.slice(0, 5).join(", ")}` +
+          (names.length > 5 ? " …" : "")
+        : " (tom)")),
+      el("p", {}, "Valet sparas — nästa gång kopierar appen hit direkt, " +
+        "utan att du behöver leta rätt på kortet igen."),
+      el("div", { class: "row" },
+        el("button", { class: "btn btn-rec",
+          onclick: () => done(true) }, "Ja, kopiera hit")));
+  });
+}
+
+async function getPlayerRoot() {
+  let root = await rememberedRoot();
+  if (root) return root;
+  try {
+    root = await window.showDirectoryPicker({ mode: "readwrite" });
+  } catch { return null; /* avbrutet */ }
+  const names = [];
+  for await (const name of root.keys())
+    if (!name.startsWith(".")) names.push(name);
+  if (!(await confirmPlayerRoot(root, names.sort()))) return null;
+  await writeMarker(root, { spelare: "Shanling M0s", ...await readMarker(root) });
+  await kvSet("playerRoot", root);
+  return root;
+}
+
+/* Hela receptet, alltid nåbart via länk i klart-rutan — ifall en flagga i
+   markörfilen säger "klart" fast steget aldrig utfördes på spelaren. */
+function shanlingGuide(folder) {
+  modal("Shanling M0s — så funkar det",
+    el("ol", {},
+      el("li", {}, "Mata ut kortet i datorn (Säker borttagning i Windows) " +
+        "och dra ur USB-kabeln — spelaren ser inte kortet medan kabeln " +
+        "sitter i."),
+      el("li", {}, "En gång per spelare: System → Update Library — slå på " +
+        "Automatic (då skannar spelaren om musiken varje gång kabeln dras " +
+        "ur) och kör Update Music en första gång. Utan skanningen visar " +
+        "spelaren ”No music” och artister som ”unknown”."),
+      el("li", {}, "Varje ny spellista importeras en gång: My Music → " +
+        "Playlists → ⋮ → Import playlist" +
+        (folder ? ` → ”${folder}”.` : ".")),
+      el("li", {}, "När en spellista har ändrats: ta bort den i Playlists " +
+        "på spelaren och importera om den — den uppdateras inte av sig " +
+        "själv.")));
+}
 
 async function syncToPlayer(playlist) {
   if (!window.showDirectoryPicker || !window.isSecureContext) {
@@ -480,10 +588,8 @@ async function syncToPlayer(playlist) {
       el("p", {}, "Så länge: " + SMB_HINT));
     return;
   }
-  let root;
-  try {
-    root = await window.showDirectoryPicker({ mode: "readwrite" });
-  } catch { return; /* avbrutet */ }
+  const root = await getPlayerRoot();
+  if (!root) return;
 
   const status = el("p", {}, "Jämför med kortet …");
   modal("Kopierar till mp3-spelare", status);
@@ -523,11 +629,46 @@ async function syncToPlayer(playlist) {
       await w.write(manifest.m3u.content);
       await w.close();
     }
-    status.textContent = copied || removed
+    // Instruktionen anpassas efter kortets status i markörfilen: bara de
+    // steg som återstår för just den här spelaren och spellistan visas.
+    const changed = copied > 0 || removed > 0;
+    const marker = await readMarker(root);
+    const imported = (marker.importerade || []).includes(manifest.folder);
+    const steps = [];
+    if (!marker.instruerad)
+      steps.push(el("li", {}, "En gång per spelare: System → " +
+        "Update Library — slå på Automatic och kör Update Music. " +
+        "Annars visar spelaren ”No music” och artister som ”unknown”."));
+    if (!imported)
+      steps.push(el("li", {}, "Importera spellistan: My Music → Playlists " +
+        `→ ⋮ → Import playlist → ”${manifest.folder}”.`));
+    else if (changed)
+      steps.push(el("li", {}, `Spellistan har ändrats: ta bort ` +
+        `”${manifest.folder}” i Playlists på spelaren och importera om den ` +
+        "(⋮ → Import playlist) — den uppdateras inte av sig själv."));
+    const summary = changed
       ? `Klart! ${copied} nya låtar kopierade` +
-        (removed ? `, ${removed} inaktuella borttagna` : "") +
-        ". Importera spellistan på spelaren: My Music → Playlists → ⋮ → Import."
+        (removed ? `, ${removed} inaktuella borttagna` : "") + "."
       : "Kortet var redan uppdaterat — inga nya låtar att kopiera.";
+    if (steps.length) {
+      steps.unshift(el("li", {}, "Mata ut kortet i datorn (Säker " +
+        "borttagning i Windows) och dra ur USB-kabeln."));
+      modal("Kopierat till mp3-spelaren",
+        el("p", {}, summary),
+        el("p", {}, el("strong", {}, "Gör klart på spelaren (Shanling M0s):")),
+        el("ol", {}, ...steps),
+        el("p", {}, el("button", { class: "linkish",
+          onclick: () => shanlingGuide(manifest.folder) },
+          "Visa fullständiga instruktioner")));
+      marker.spelare = marker.spelare || "Shanling M0s";
+      marker.instruerad = true;
+      marker.importerade =
+        [...new Set([...(marker.importerade || []), manifest.folder])];
+      await writeMarker(root, marker);
+    } else {
+      status.textContent = summary + " Spelaren uppdaterar sig själv när " +
+        "kabeln dras ur.";
+    }
   } catch (ex) {
     status.textContent = "Kopieringen misslyckades: " + ex.message;
   }
