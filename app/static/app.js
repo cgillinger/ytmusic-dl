@@ -695,7 +695,9 @@ async function syncToPlayer(playlist) {
   if (!root) return;
 
   const status = el("p", {}, "Jämför med kortet …");
-  modal("Kopierar till mp3-spelare", status);
+  const bar = el("progress", { max: 1, value: 0,
+    style: "width:100%; display:none" });
+  modal("Kopierar till mp3-spelare", status, bar);
   try {
     const manifest = await api(`/api/playlists/${playlist.id}/files`);
     const dir = await root.getDirectoryHandle(manifest.folder, { create: true });
@@ -704,16 +706,30 @@ async function syncToPlayer(playlist) {
 
     let copied = 0;
     const todo = manifest.files.filter(f => !existing.has(f));
+    if (todo.length) bar.style.display = "";
     for (const [i, name] of todo.entries()) {
       status.textContent = `Kopierar (${i + 1}/${todo.length}): ${name}`;
+      bar.value = i / todo.length;
       const res = await fetch(
         `/api/playlists/${playlist.id}/file/${encodeURIComponent(name)}`);
       if (!res.ok) throw new Error("Kunde inte läsa " + name);
+      const total = +res.headers.get("content-length") || 0;
       const fh = await dir.getFileHandle(name, { create: true });
       const w = await fh.createWritable();
-      await res.body.pipeTo(w);
+      const reader = res.body.getReader();
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await w.write(value);
+        got += value.length;
+        // bytes inom filen ger mjuk rörelse; filräknaren ger totalen
+        if (total) bar.value = (i + got / total) / todo.length;
+      }
+      await w.close();
       copied++;
     }
+    bar.value = 1;
     // Ta bort mp3:or på kortet som inte längre finns i spellistmappen —
     // omnumreringen byter filnamn när spellistans ordning ändras.
     let removed = 0;
@@ -784,7 +800,15 @@ async function syncToPlayer(playlist) {
       await writeMarker(root, marker);
     }
   } catch (ex) {
-    status.textContent = "Kopieringen misslyckades: " + ex.message;
+    bar.style.display = "none";
+    const gone = ["NotFoundError", "NotAllowedError", "InvalidStateError"]
+      .includes(ex.name);
+    status.textContent = gone
+      ? "Avbrutet — spelaren verkar ha kopplat ner sig mitt i. Det som " +
+        "redan kopierats ligger kvar på kortet. Kolla kabeln, anslut " +
+        "spelaren igen och tryck på knappen — kopieringen fortsätter där " +
+        "den slutade."
+      : "Kopieringen misslyckades: " + ex.message;
   }
 }
 
