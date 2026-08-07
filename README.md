@@ -57,17 +57,11 @@ ska slippa underhålla den.
   arbetaren läser in yt-dlp färskt per jobb, så uppdateringar gäller utan
   omstart.
 - **Kopiera direkt till spelaren.** I Chrome/Edge över HTTPS synkar en knapp
-  bara nya låtar rakt till minneskortet (File System Access API) och städar
-  bort omdöpta gamla filer. Mappvalet görs bara första gången — kortet får
-  en markörfil som id och webbläsaren minns handtaget. Efter synken visas
-  bara det som återstår på spelaren: förstagångsstegen (biblioteksskanning)
-  tills markörfilen på kortet säger att de är gjorda — sedan bara "spela
-  via Folders", som alltid är färsk utan importsteg. Stämmer därmed även
-  när en annan dator (Linux eller Windows) senast synkade. Efter synken
-  erbjuds kortstädning: mappar som inte längre hör till någon spellista och
-  datorns kvarglömda papperskorg (.Trash-1000/$RECYCLE.BIN — där ligger
-  "raderade" filer som spelaren annars fortsätter spela) listas med
-  kryssrutor och tas bort först efter bekräftelse.
+  bara nya låtar rakt till minneskortet (File System Access API), städar
+  bort omdöpta gamla filer och erbjuder kortstädning. Mappvalet görs bara
+  allra första gången. Hela flödet — inklusive varför spelarens
+  importfunktion inte används — beskrivs i
+  [Mp3-spelaren](#mp3-spelaren-shanling-m0s).
 - **Begripliga fel på svenska.** Privat spellista? Bot-kontroll? Avbruten av
   omstart? Appen förklarar vad som hänt och vad man gör åt det, där man
   tittar.
@@ -100,6 +94,73 @@ Utdatastruktur per användare:
 
 Kopiera `Musik/Spelaren/` till spelarens minneskort som den är —
 mappstrukturen speglar kortet.
+
+## Mp3-spelaren (Shanling M0s)
+
+Verifierat mot fysisk spelare 2026-08-07. Allt nedan gäller M0s men bör
+stämma för fler Shanling-modeller med samma firmwarefamilj (M0 Pro m.fl.).
+
+### Hur spelaren fungerar (och varför appen gör som den gör)
+
+- **Biblioteket måste skannas.** Spelarens My Music-vy bygger på en intern
+  databas som fylls först vid System → Update Library. Utan skanning visar
+  spelaren "No music" och alla artister som "unknown" — även om filerna
+  spelar fint via Folders-vyn (som läser kortet direkt). Inställningen
+  **Automatic** skannar om automatiskt varje gång USB-kabeln dras ur; appen
+  instruerar om detta vid första synken.
+- **Spelarens spellistimport används inte.** Importerade spellistor
+  (My Music → Playlists → ⋮ → Import playlist) kopieras in i spelarens
+  interna databas och uppdateras **aldrig** när m3u-filen ändras — enda
+  vägen är att radera och importera om, varje gång. Därför är appens
+  huvudväg **Folders-vyn**: eftersom filerna numreras i spellistans ordning
+  är mappen på kortet identisk med spellistan, alltid färsk efter en synk,
+  utan ett enda steg på spelaren. (m3u-filen genereras ändå, med relativa
+  sökvägar — verifierat att spelaren kan importera den, för den som
+  absolut vill.)
+- **Papperskorgsfällan.** "Radera" i datorns filhanterare (GNOME Files,
+  Utforskaren) raderar inte på flyttbara enheter — filerna flyttas till en
+  dold papperskorgsmapp **på kortet** (`.Trash-1000` respektive
+  `$RECYCLE.BIN`). Punktprefix och "dolt" är datorkonventioner; för
+  spelaren är det vanliga mappar, så "raderade" låtar fortsätter spela.
+  Appens kortstädning (nedan) hittar och tömmer dem.
+
+### Synkflödet i appen
+
+1. **Första gången per dator:** en förklaringsruta beskriver vad som ska
+   pekas ut, mappväljaren öppnas en enda gång, och valet bekräftas med
+   kortets innehåll synligt. Sedan skrivs en dold markörfil
+   (`.ytmusic-dl-spelare`) på kortet och mapphandtaget sparas i
+   webbläsarens IndexedDB.
+2. **Alla gånger därefter:** synken går direkt mot det sparade kortet —
+   som mest ett "Tillåt"-klick (väljer man "Tillåt varje gång" i
+   Chrome/Edge försvinner även det). Fel kort, urkopplat kort eller
+   borttagen markörfil ⇒ automatiskt tillbaka till mappväljaren. Riktiga
+   USB-id:n kan webbläsare inte läsa för lagringsenheter — markörfilen
+   **är** kortets id.
+3. **Synken speglar spellistmappen:** nya filer kopieras, omdöpta/strukna
+   raderas (utan omväg via någon papperskorg), m3u-filen skrivs om.
+4. **Klart-rutan visar bara det som återstår på spelaren.** Markörfilen
+   bär kortets status som JSON (`{spelare, instruerad}`): förstagångs-
+   stegen (mata ut, Update Library/Automatic, Folders) visas tills de
+   markerats gjorda — sedan bara en "dra ur kabeln och lyssna"-rad.
+   Statusen ligger **på kortet**, inte i webbläsaren, så instruktionerna
+   stämmer även när en annan dator (Linux eller Windows) synkade senast.
+   Full guide alltid nåbar via länk i rutan.
+5. **Kortstädning vid behov:** efter varje synk jämförs kortets rot mot
+   profilens samtliga spellistor. Okända mappar och datorns papperskorg
+   listas med kryssrutor (papperskorgen förkryssad, okända mappar kräver
+   aktivt val) — ingenting raderas tyst. Föräldralösa m3u-filer följer
+   med ut automatiskt.
+
+Att "mata ut" kortet kan appen inte göra åt en — webbläsare får inte
+avmontera enheter (medvetet: ingen web-API finns). Appen stänger dock alla
+filhandtag innan klart-rutan visas; på Windows (snabb borttagning är
+standard) är det i praktiken säkert att dra ur kabeln direkt, på Linux gör
+⏏-steget faktisk nytta.
+
+Alla texter i flödet är skrivna för en datorovan smartphone-van 14-åring:
+förklaringsrutan *innan* mappväljaren, vardagsspråk, och varje steg säger
+både vad och varför. Designresonemangen i sin helhet: se [plan.md](plan.md).
 
 ## Kom igång
 
